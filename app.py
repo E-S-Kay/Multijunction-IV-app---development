@@ -1,345 +1,219 @@
-import numpy as np
 import streamlit as st
-from scipy.optimize import root_scalar, fsolve
-from scipy import stats
-import plotly.graph_objects as go
+import numpy as np
 import pandas as pd
+from scipy.optimize import brentq
+from scipy.stats import linregress
 
-# ============================================================
-# Helper functions
-# ============================================================
-
-def safe_exp(x):
-    """Avoid overflow of exp()."""
-    return np.exp(np.clip(x, -700, 700))
-
-def diode_equation_V(V, J, cell):
-    """Single-diode equation with series and shunt resistances."""
-    q = 1.602176634e-19
+# ---------------------------------------------------------
+# Helper: Diode Equation Solver
+# ---------------------------------------------------------
+def diode_current(V, Jph, J0, n, Rs, Rsh, T):
     k = 1.380649e-23
-    arg = q * (V + J * cell["Rs"]) / (cell["n"] * k * cell["T"])
-    exp_term = safe_exp(arg)
-    return J - (cell["Jph"] - cell["J0"] * (exp_term - 1.0) - (V + J * cell["Rs"]) / cell["Rsh"])
+    q = 1.602176634e-19
+    Vt = n * k * T / q
+    return Jph - J0 * (np.exp((V + Rs * 0) / Vt) - 1) - V / Rsh
 
-def estimate_Voc(cell):
-    """Find Voc by solving J(V)=0."""
-    try:
-        sol = root_scalar(lambda V: diode_equation_V(V, 0.0, cell),
-                          bracket=[-0.5, 2.0], method="bisect")
-        if sol.converged:
-            return sol.root
-    except Exception:
-        pass
-    return 0.6  # fallback
+def solve_J_at_V0(Jph, J0, n, Rs, Rsh, T):
+    f = lambda J: J - (Jph - J0 * (np.exp((0 + Rs * J) / (n * 1.380649e-23 * T / 1.602e-19)) - 1) - 0 / Rsh)
+    return Jph  # For stability: photocurrent dominates at V=0
 
-def calculate_iv(Jph_mA, J0_mA, n, Rs, Rsh, T, J_common):
-    """Calculate V(J) for a subcell using the diode equation."""
-    Jph = float(Jph_mA)/1000
-    J0  = float(J0_mA)/1000
-    cell = {"Jph":Jph, "J0":J0, "n":float(n),
-            "Rs":float(Rs), "Rsh":float(Rsh), "T":float(T)}
+# ---------------------------------------------------------
+# IV calculation for a subcell using diode equation
+# ---------------------------------------------------------
+def calculate_subcell_iv(Jph, J0, n, Rs, Rsh, T, num_points=500):
+    J = np.linspace(-0.1, Jph, num_points)  # current axis
+    k = 1.380649e-23
+    q = 1.602176634e-19
+    Vt = n * k * T / q
+
+    V = J*0.0
+    for i, Ji in enumerate(J):
+        f = lambda V: Jph - J0*(np.exp((V + Ji*Rs)/Vt) - 1) - (V + Ji*Rs)/Rsh - Ji
+        try:
+            V[i] = brentq(f, -1.5, 2.5)
+        except:
+            V[i] = np.nan
+
+    # Remove NaN
+    mask = ~np.isnan(V)
+    return J[mask], V[mask]
+
+# ---------------------------------------------------------
+# Linear 2-point interpolation for Jsc of multi-junction
+# ---------------------------------------------------------
+def interpolate_jsc(J, Vstack):
+    # values around V=0
+    idx_above = np.where(Vstack > 0)[0]
+    idx_below = np.where(Vstack <= 0)[0]
+
+    if len(idx_above) == 0 or len(idx_below) == 0:
+        return np.nan
+
+    i1 = idx_below[-1]     # largest negative V
+    i2 = idx_above[0]      # smallest positive V
+
+    slope, intercept, _, _, _ = linregress([Vstack[i1], Vstack[i2]], [J[i1], J[i2]])
+    return intercept  # at V=0
+
+# ---------------------------------------------------------
+# Extract solar cell parameters
+# ---------------------------------------------------------
+def extract_parameters(J, V):
+    # Jsc
+    idx_above = np.where(V > 0)[0]
+    idx_below = np.where(V <= 0)[0]
+
+    if len(idx_above) > 0 and len(idx_below) > 0:
+        i1 = idx_below[-1]
+        i2 = idx_above[0]
+        slope, intercept, *_ = linregress([V[i1], V[i2]], [J[i1], J[i2]])
+        Jsc = intercept
+    else:
+        Jsc = np.nan
 
     # Voc
-    Voc = estimate_Voc(cell)
+    idx_above = np.where(J > 0)[0]
+    idx_below = np.where(J <= 0)[0]
+    if len(idx_above) > 0 and len(idx_below) > 0:
+        j1 = idx_below[-1]
+        j2 = idx_above[0]
+        slope, intercept, *_ = linregress([J[j1], J[j2]], [V[j1], V[j2]])
+        Voc = intercept
+    else:
+        Voc = np.nan
 
-    V_vals = np.zeros_like(J_common, dtype=float)
-    V_prev = Voc
+    # MPP
+    P = J * V
+    idx = np.argmax(P)
+    Jmpp = J[idx]
+    Vmpp = V[idx]
+    PCE = P[idx]
 
-    for i, JmA in enumerate(J_common):
-        J = float(JmA)/1000
-        V_sol = None
+    # FF
+    if Voc != 0 and Jsc != 0:
+        FF = (Vmpp * Jmpp) / (Voc * Jsc)
+    else:
+        FF = np.nan
 
-        # try bisection
-        try:
-            sol = root_scalar(lambda V: diode_equation_V(V, J, cell),
-                              bracket=[-1.0, Voc + 1.5], method="bisect")
-            if sol.converged:
-                V_sol = sol.root
-        except:
-            pass
+    return Jsc, Voc, Jmpp, Vmpp, PCE, FF
 
-        # fallback to fsolve
-        if V_sol is None:
-            try:
-                sol = fsolve(lambda V: diode_equation_V(V, J, cell),
-                             V_prev, maxfev=1000)
-                V_sol = float(sol[0])
-            except:
-                V_sol = float(V_prev)
+# ---------------------------------------------------------
+# Streamlit UI
+# ---------------------------------------------------------
+st.title("Multijunction IV Calculator (1–4 Junctions)")
 
-        V_vals[i] = V_sol
-        V_prev = V_sol
+st.sidebar.header("Subcell Parameters")
+num_cells = st.sidebar.selectbox("Number of Subcells", [1,2,3,4], index=1)
 
-    # P(J)
-    P_plot = V_vals * J_common
-    idx_mpp = int(np.nanargmax(P_plot))
+# Default values from user
+default_params = [
+    {"Jph":20, "J0":1e-11, "n":1.0,  "Rs":0.2, "Rsh":10000, "T":298},
+    {"Jph":21, "J0":1e-15, "n":1.24, "Rs":0.2, "Rsh":1000,  "T":298},
+    {"Jph":18, "J0":1e-12, "n":1.3,  "Rs":0.3, "Rsh":5000,  "T":298},
+    {"Jph":17, "J0":1e-13, "n":1.4,  "Rs":0.3, "Rsh":8000,  "T":298},
+]
 
-    # Jsc: solve J(V=0)
-    try:
-        upper = max(1e-6, Jph_mA * 1.5)
-        sol_j = root_scalar(lambda J: diode_equation_V(0.0, J/1000, cell),
-                            bracket=[0.0, upper], method="bisect")
-        Jsc_val = sol_j.root if sol_j.converged else np.nan
-    except:
-        Jsc_val = np.nan
-
-    Vmpp = float(V_vals[idx_mpp])
-    Jmpp = float(J_common[idx_mpp])
-    Pmpp = float(P_plot[idx_mpp])
-
-    return V_vals, P_plot, float(Voc), Vmpp, Jmpp, Pmpp, Jsc_val
-
-def interpolate_Jsc_two_points_linreg(V, J):
-    """Find zero-crossing current of multijunction curve using two-point linear regression."""
-    V = np.asarray(V)
-    J = np.asarray(J)
-
-    mask = ((V[:-1] <= 0) & (V[1:] >= 0)) | ((V[:-1] >= 0) & (V[1:] <= 0))
-    idxs = np.where(mask)[0]
-
-    if idxs.size == 0:
-        return np.nan
-
-    i = idxs[0]
-    V_pair = V[i:i+2]
-    J_pair = J[i:i+2]
-
-    slope, intercept, *_ = stats.linregress(V_pair, J_pair)
-    return intercept  # J(V=0)
-
-def calc_FF(Jsc, Voc, Jmpp, Vmpp):
-    """Fill factor."""
-    if Jsc is None or Voc is None:
-        return np.nan
-    if Jsc == 0 or Voc == 0:
-        return np.nan
-    return (Vmpp * Jmpp) / (Voc * Jsc)
-
-def to_float(x, default=0.0):
-    try:
-        return float(x.replace(",", "."))  
-    except:
-        return default
-
-def fmt(x, dec=2):
-    if x is None or (isinstance(x, float) and np.isnan(x)):
-        return "NaN"
-    return f"{x:.{dec}f}"
-
-# ============================================================
-# UI setup
-# ============================================================
-
-st.set_page_config(page_title="Multijunction IV Simulator", layout="centered")
-st.title("IV Curves: 1–4 Subcells (Single-Diode Model)")
-
-st.markdown("""
-Simulates 1–4 solar subcells using the **single-diode model**.  
-Multijunction voltages are summed at a common current density.
-""")
-
-# number of subcells
-num_cells = st.sidebar.selectbox("Number of subcells", [1,2,3,4], index=1)
-
-# Colors
-pastel = ["#AFCBFF", "#FFCBAF", "#CBAFFF", "#AFFFCB"]
-
-# Collect input parameters
-cells = []
 params = []
 
 for i in range(num_cells):
-    st.sidebar.markdown(
-        f"<div style='background:{pastel[i]};padding:8px;border-radius:6px'><b>Subcell {i+1}</b></div>",
-        unsafe_allow_html=True
-    )
+    st.sidebar.subheader(f"Subcell {i+1}")
 
-    Jph = to_float(st.sidebar.text_input(f"Jph {i+1} [mA/cm²]", "30" if i==0 else "20"))
-    J0  = to_float(st.sidebar.text_input(f"J0 {i+1} [mA/cm²]", "1e-10" if i==0 else "1e-12"))
-    n   = to_float(st.sidebar.text_input(f"n {i+1}", "1.0"))
-    Rs  = to_float(st.sidebar.text_input(f"Rs {i+1} [Ω·cm²]", "0.2"))
-    Rsh = to_float(st.sidebar.text_input(f"Rsh {i+1} [Ω·cm²]", "1000"))
-    T   = to_float(st.sidebar.text_input(f"T {i+1} [K]", "298"))
+    Jph = float(st.sidebar.text_input(f"Jph{i+1}", value=default_params[i]["Jph"]))
+    J0  = float(st.sidebar.text_input(f"J0{i+1}",  value=default_params[i]["J0"]))
+    n   = float(st.sidebar.text_input(f"n{i+1}",   value=default_params[i]["n"]))
+    Rs  = float(st.sidebar.text_input(f"Rs{i+1}",  value=default_params[i]["Rs"]))
+    Rsh = float(st.sidebar.text_input(f"Rsh{i+1}", value=default_params[i]["Rsh"]))
+    T   = float(st.sidebar.text_input(f"T{i+1}",   value=default_params[i]["T"]))
 
-    cells.append({"Jph":Jph,"J0":J0,"n":n,"Rs":Rs,"Rsh":Rsh,"T":T})
-    params.append({"Jph":Jph,"J0":J0,"n":n,"Rs":Rs,"Rsh":Rsh,"T":T})
+    params.append(dict(Jph=Jph, J0=J0, n=n, Rs=Rs, Rsh=Rsh, T=T))
 
-# ============================================================
-# IV calculation
-# ============================================================
-
-J_common = np.linspace(0, max([c["Jph"] for c in cells]), 800)
-
+# ---------------------------------------------------------
+# Compute IV curves
+# ---------------------------------------------------------
+J_all = []
 V_all = []
-rows = []
-
-for i,c in enumerate(cells):
-    V, P, Voc, Vmpp, Jmpp, Pmpp, Jsc = calculate_iv(
-        c["Jph"], c["J0"], c["n"], c["Rs"], c["Rsh"], c["T"],
-        J_common
-    )
-
+for p in params:
+    J, V = calculate_subcell_iv(**p)
+    J_all.append(J)
     V_all.append(V)
-    FF = calc_FF(Jsc, Voc, Jmpp, Vmpp)
 
-    rows.append({
-        "Label":f"Subcell {i+1}",
-        "Jsc":Jsc, "Voc":Voc, "FF":FF,
-        "PCE":Pmpp, "Jmpp":Jmpp, "Vmpp":Vmpp,
-        "color":pastel[i]
-    })
+# Common current grid
+J_min = max(J.min() for J in J_all)
+J_max = min(J.max() for J in J_all)
+J_common = np.linspace(J_min, J_max, 600)
 
-# Multijunction
+# Interpolate all subcells to common J grid
+V_interp = [np.interp(J_common, J_all[i], V_all[i]) for i in range(num_cells)]
+
+# Sum of voltages
+V_stack = np.sum(V_interp, axis=0)
+
+# ---------------------------------------------------------
+# Compute parameters per subcell
+# ---------------------------------------------------------
+results = []
+
+for i in range(num_cells):
+    Jsc, Voc, Jmpp, Vmpp, PCE, FF = extract_parameters(J_all[i], V_all[i])
+    results.append([f"Subcell {i+1}",
+                    Jsc, Voc, Jmpp, Vmpp, PCE, FF])
+
+# ---------------------------------------------------------
+# Tandem parameters
+# ---------------------------------------------------------
 if num_cells > 1:
-    V_stack = np.sum(np.vstack(V_all), axis=0)
-    P_stack = V_stack * J_common
+    Jsc_t = interpolate_jsc(J_common, V_stack)
+    Voc_t = sum(results[i][2] for i in range(num_cells))
 
-    idx_mpp = int(np.nanargmax(P_stack))
-    Voc_stack = float(V_stack[0])
-    Vmpp_stack = float(V_stack[idx_mpp])
-    Jmpp_stack = float(J_common[idx_mpp])
-    Pmpp_stack = float(P_stack[idx_mpp])
+    # MPP
+    P = J_common * V_stack
+    idx = np.argmax(P)
+    Jmpp_t = J_common[idx]
+    Vmpp_t = V_stack[idx]
+    PCE_t  = P[idx]
 
-    Jsc_stack = interpolate_Jsc_two_points_linreg(V_stack, J_common)
-    FF_stack  = calc_FF(Jsc_stack, Voc_stack, Jmpp_stack, Vmpp_stack)
+    FF_t = (Vmpp_t * Jmpp_t) / (Voc_t * Jsc_t)
 
-    rows.append({
-        "Label":"Multijunction",
-        "Jsc":Jsc_stack, "Voc":Voc_stack,
-        "FF":FF_stack, "PCE":Pmpp_stack,
-        "Jmpp":Jmpp_stack, "Vmpp":Vmpp_stack,
-        "color":"white"
-    })
+    results.append(["Multijunction", Jsc_t, Voc_t, Jmpp_t, Vmpp_t, PCE_t, FF_t])
 
-# ============================================================
-# Results table
-# ============================================================
+# ---------------------------------------------------------
+# Display table
+# ---------------------------------------------------------
+df = pd.DataFrame(results, columns=["Cell","Jsc","Voc","Jmpp","Vmpp","PCE","FF"])
+df_display = df.copy()
 
-df = pd.DataFrame({
-    "Cell":[r["Label"] for r in rows],
-    "Jsc [mA/cm²]":[fmt(r["Jsc"],2) for r in rows],
-    "Voc [V]":[fmt(r["Voc"],3) for r in rows],
-    "FF [%]":[fmt(r["FF"]*100,2) if r["FF"]==r["FF"] else "NaN" for r in rows],
-    "PCE (mW/cm²)":[fmt(r["PCE"],2) for r in rows],
-    "Jmpp [mA/cm²]":[fmt(r["Jmpp"],2) for r in rows],
-    "Vmpp [V]":[fmt(r["Vmpp"],3) for r in rows],
-})
+fmt_2 = ["Jsc","Jmpp","PCE"]
+fmt_2v = ["Voc","Vmpp"]
 
-# Save color column separately
-colors = [r["color"] for r in rows]
+for col in fmt_2:
+    df_display[col] = df_display[col].map(lambda x: f"{x:.2f}")
+for col in fmt_2v:
+    df_display[col] = df_display[col].map(lambda x: f"{x:.2f}")
 
-def highlight_row(row):
-    return [f"background-color: {colors[row.name]}"] * len(row)
+st.subheader("Results")
+st.dataframe(df_display)
 
-st.write("### Results")
-st.dataframe(df.style.apply(highlight_row,axis=1).hide(axis="index"))
+# ---------------------------------------------------------
+# Export
+# ---------------------------------------------------------
+st.subheader("Export Data")
+export_name = st.text_input("Export filename prefix:", "IV_export")
 
-# ============================================================
-# Plot
-# ============================================================
+# Result table
+results_txt = df_display.to_string(index=False)
 
-fig = go.Figure()
+# IV export
+iv_dict = {}
+for i in range(num_cells):
+    iv_dict[f"V_subcell{i+1}"] = V_all[i]
+    iv_dict[f"J_subcell{i+1}"] = J_all[i]
+iv_dict["V_multijunction"] = V_stack
+iv_dict["J_multijunction"] = J_common
 
-# Subcells (pastel, thin)
-for i, V in enumerate(V_all):
-    fig.add_trace(go.Scatter(
-        x=V, y=J_common, mode="lines",
-        name=f"Subcell {i+1}",
-        line=dict(color=pastel_colors[i], width=2)
-    ))
+iv_df = pd.DataFrame(iv_dict)
+iv_txt = iv_df.to_string(index=False)
 
-# Multijunction (black, thick)
-if num_cells > 1:
-    fig.add_trace(go.Scatter(
-        x=V_stack, y=J_common, mode="lines",
-        name="Multijunction",
-        line=dict(color=stack_color, width=4)
-    ))
-    fig.add_trace(go.Scatter(
-        x=[V_mpp_stack], y=[J_mpp_stack], mode="markers",
-        name="Multijunction MPP",
-        marker=dict(color=stack_color, size=10, symbol="x")
-    ))
-
-# Axes helpers
-fig.add_vline(x=0, line=dict(color="gray", dash="dash"))
-fig.add_hline(y=0, line=dict(color="gray", dash="dash"))
-
-fig.update_layout(
-    title="IV Curves",
-    xaxis_title="Voltage [V]",
-    yaxis_title="Current density [mA/cm²]",
-    hovermode="x unified"
-)
-
-# X-range: single-junction uses its own Voc, multijunction uses combined Voc
-x_max = (rows[0]["Voc"] + 0.1) if num_cells == 1 else (rows[-1]["Voc"] + 0.1)  # rows[-1] is Multijunction when present
-fig.update_xaxes(range=[-0.2, x_max])
-
-st.plotly_chart(fig, use_container_width=True)
-
-# ============================================================
-# EXPORT SECTION
-# ============================================================
-
-st.markdown("---")
-st.markdown("## Export")
-
-default_name = "IV_export"
-export_name = st.text_input("Filename prefix (no extension):", value=default_name)
-
-# --- Results table export ---
-results_txt = df.to_string(index=False)
-st.download_button(
-    "📄 Download Results (.txt)",
-    data=results_txt,
-    file_name=f"{export_name}_results.txt",
-    mime="text/plain"
-)
-
-# --- IV curves export ---
-iv_data = {}
-for i,V in enumerate(V_all):
-    iv_data[f"V_subcell{i+1}(V)"] = V
-    iv_data[f"J_subcell{i+1}(mA/cm²)"] = J_common
-
-if num_cells > 1:
-    iv_data[f"V_multijunction(V)"] = V_stack
-    iv_data[f"J_multijunction(mA/cm²)"] = J_common
-
-df_iv = pd.DataFrame(iv_data)
-iv_txt = df_iv.to_string(index=False)
-
-st.download_button(
-    "📄 Download IV curves (.txt)",
-    data=iv_txt,
-    file_name=f"{export_name}_IV.txt",
-    mime="text/plain"
-)
-
-# --- Input parameters export ---
-param_lines = []
+# Input parameters
+param_txt = ""
 for i,p in enumerate(params):
-    param_lines.append(f"--- Subcell {i+1} ---")
-    for k,v in p.items():
-        param_lines.append(f"{k}: {v}")
-    param_lines.append("")
-
-param_txt = "\n".join(param_lines)
-
-st.download_button(
-    "📄 Download Input Parameters (.txt)",
-    data=param_txt,
-    file_name=f"{export_name}_parameters.txt",
-    mime="text/plain"
-)
-
-# ============================================================
-# Footer
-# ============================================================
-
-st.markdown("---")
-st.markdown("""
-Developed by **Eike Köhnen (HZB)**  
-Contact: eike.koehnen@helmholtz-berlin.de
-""")
+    param_txt += f"-_
