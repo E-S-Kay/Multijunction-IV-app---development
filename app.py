@@ -268,44 +268,34 @@ fig.update_xaxes(range=[-0.2, x_max])
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Export data (Results + IV curves) — TXT only
+# Export data (IV curves) — formatted TXT
 # -----------------------------
 
-st.markdown("### Export Data")
+st.markdown("### Export IV Data")
 
-# ----- 1) Export results table (TXT only) -----
-txt_results = df_display.to_string(index=False)
+# Build columns in requested order:
+# V1, J1, V2, J2, ..., Vn, Jn, Vmulti, Jmulti
 
-st.download_button(
-    "📥 Download Results Table (TXT)",
-    data=txt_results,
-    file_name="IV_results_table.txt",
-    mime="text/plain"
-)
+iv_export_dict = {}
 
-# ----- 2) Export full IV curves (TXT only) -----
-# Build a combined DataFrame for currents and voltages
-
-iv_dict = {
-    "J (mA/cm²)": J_common
-}
-
-# Add each subcell voltage column
 for i, V in enumerate(V_all):
-    iv_dict[f"V_subcell_{i+1} (V)"] = V
+    iv_export_dict[f"V_subcell_{i+1} (V)"] = V
+    iv_export_dict[f"J_subcell_{i+1} (mA/cm²)"] = J_common  # identical J for all
 
-# Add multijunction curve if present
+# Add multijunction (only if >1 cell)
 if num_cells > 1:
-    iv_dict["V_multijunction (V)"] = V_stack
+    iv_export_dict["V_multijunction (V)"] = V_stack
+    iv_export_dict["J_multijunction (mA/cm²)"] = J_common
 
-df_iv = pd.DataFrame(iv_dict)
+df_iv_export = pd.DataFrame(iv_export_dict)
 
-txt_iv = df_iv.to_string(index=False)
+# Convert to TXT
+txt_iv_export = df_iv_export.to_string(index=False)
 
 st.download_button(
-    "📥 Download IV Curves (TXT)",
-    data=txt_iv,
-    file_name="IV_curves.txt",
+    "📥 Download Formatted IV Curves (TXT)",
+    data=txt_iv_export,
+    file_name="IV_curves_formatted.txt",
     mime="text/plain"
 )
 
