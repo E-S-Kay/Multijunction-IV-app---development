@@ -268,6 +268,65 @@ fig.update_xaxes(range=[-0.2, x_max])
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
+# Export data (Results + IV curves)
+# -----------------------------
+
+st.markdown("### Export Data")
+
+# ----- 1) Export results table -----
+csv_results = df_display.to_csv(index=False).encode("utf-8")
+txt_results = df_display.to_string(index=False)
+
+st.download_button(
+    "📥 Download Results Table (CSV)",
+    data=csv_results,
+    file_name="IV_results_table.csv",
+    mime="text/csv"
+)
+
+st.download_button(
+    "📥 Download Results Table (TXT)",
+    data=txt_results,
+    file_name="IV_results_table.txt",
+    mime="text/plain"
+)
+
+# ----- 2) Export full IV curves -----
+# Build a combined DataFrame for currents and voltages
+
+iv_dict = {
+    "J (mA/cm²)": J_common
+}
+
+# Add each subcell voltage column
+for i, V in enumerate(V_all):
+    iv_dict[f"V_subcell_{i+1} (V)"] = V
+
+# Add multijunction curve if present
+if num_cells > 1:
+    iv_dict["V_multijunction (V)"] = V_stack
+
+df_iv = pd.DataFrame(iv_dict)
+
+# Export versions
+csv_iv = df_iv.to_csv(index=False).encode("utf-8")
+txt_iv = df_iv.to_string(index=False)
+
+st.download_button(
+    "📥 Download IV Curves (CSV)",
+    data=csv_iv,
+    file_name="IV_curves.csv",
+    mime="text/csv"
+)
+
+st.download_button(
+    "📥 Download IV Curves (TXT)",
+    data=txt_iv,
+    file_name="IV_curves.txt",
+    mime="text/plain"
+)
+
+# -----------------------------
 # About / Footer
 # -----------------------------
 st.markdown("---")
