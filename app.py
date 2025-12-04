@@ -199,21 +199,52 @@ st.dataframe(df_display)
 st.subheader("Export Data")
 export_name = st.text_input("Export filename prefix:", "IV_export")
 
-# Result table
+# -------- 1) Results Table TXT ----------
 results_txt = df_display.to_string(index=False)
 
-# IV export
+st.download_button(
+    "Download Results (.txt)",
+    data=results_txt,
+    file_name=f"{export_name}_results.txt",
+    mime="text/plain"
+)
+
+# -------- 2) IV Curve TXT ----------
 iv_dict = {}
+
+# Subcells: V_i, J_i
 for i in range(num_cells):
     iv_dict[f"V_subcell{i+1}"] = V_all[i]
     iv_dict[f"J_subcell{i+1}"] = J_all[i]
-iv_dict["V_multijunction"] = V_stack
-iv_dict["J_multijunction"] = J_common
+
+# Multijunction
+if num_cells > 1:
+    iv_dict["V_multijunction"] = V_stack
+    iv_dict["J_multijunction"] = J_common
 
 iv_df = pd.DataFrame(iv_dict)
 iv_txt = iv_df.to_string(index=False)
 
-# Input parameters
-param_txt = ""
-for i,p in enumerate(params):
-    param_txt += f"-_
+st.download_button(
+    "Download IV (.txt)",
+    data=iv_txt,
+    file_name=f"{export_name}_IV.txt",
+    mime="text/plain"
+)
+
+# -------- 3) Input Parameters TXT ----------
+param_lines = []
+for i, p in enumerate(params):
+    param_lines.append(f"--- Subcell {i+1} ---")
+    for key, value in p.items():
+        param_lines.append(f"{key}: {value}")
+    param_lines.append("")
+
+param_txt = "\n".join(param_lines)
+
+st.download_button(
+    "Download Parameters (.txt)",
+    data=param_txt,
+    file_name=f"{export_name}_parameters.txt",
+    mime="text/plain"
+)
