@@ -240,20 +240,30 @@ st.dataframe(df.style.apply(highlight_row,axis=1).hide(axis="index"))
 
 fig = go.Figure()
 
-# subcells
-for i,V in enumerate(V_all):
+# Subcells (pastel, thin)
+for i, V in enumerate(V_all):
     fig.add_trace(go.Scatter(
-        x=V, y=J_common, mode="lines", name=f"Subcell {i+1}",
-        line=dict(color=pastel[i], width=2)
+        x=V, y=J_common, mode="lines",
+        name=f"Subcell {i+1}",
+        line=dict(color=pastel_colors[i], width=2)
     ))
 
-# MJ
+# Multijunction (black, thick)
 if num_cells > 1:
     fig.add_trace(go.Scatter(
         x=V_stack, y=J_common, mode="lines",
         name="Multijunction",
-        line=dict(color="black",width=4)
+        line=dict(color=stack_color, width=4)
     ))
+    fig.add_trace(go.Scatter(
+        x=[V_mpp_stack], y=[J_mpp_stack], mode="markers",
+        name="Multijunction MPP",
+        marker=dict(color=stack_color, size=10, symbol="x")
+    ))
+
+# Axes helpers
+fig.add_vline(x=0, line=dict(color="gray", dash="dash"))
+fig.add_hline(y=0, line=dict(color="gray", dash="dash"))
 
 fig.update_layout(
     title="IV Curves",
@@ -261,6 +271,10 @@ fig.update_layout(
     yaxis_title="Current density [mA/cm²]",
     hovermode="x unified"
 )
+
+# X-range: single-junction uses its own Voc, multijunction uses combined Voc
+x_max = (rows[0]["Voc"] + 0.1) if num_cells == 1 else (rows[-1]["Voc"] + 0.1)  # rows[-1] is Multijunction when present
+fig.update_xaxes(range=[-0.2, x_max])
 
 st.plotly_chart(fig, use_container_width=True)
 
