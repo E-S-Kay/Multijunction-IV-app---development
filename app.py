@@ -268,21 +268,13 @@ fig.update_xaxes(range=[-0.2, x_max])
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Export data (Results + IV curves)
+# Export data (Results + IV curves) — TXT only
 # -----------------------------
 
 st.markdown("### Export Data")
 
-# ----- 1) Export results table -----
-csv_results = df_display.to_csv(index=False).encode("utf-8")
+# ----- 1) Export results table (TXT only) -----
 txt_results = df_display.to_string(index=False)
-
-st.download_button(
-    "📥 Download Results Table (CSV)",
-    data=csv_results,
-    file_name="IV_results_table.csv",
-    mime="text/csv"
-)
 
 st.download_button(
     "📥 Download Results Table (TXT)",
@@ -291,7 +283,7 @@ st.download_button(
     mime="text/plain"
 )
 
-# ----- 2) Export full IV curves -----
+# ----- 2) Export full IV curves (TXT only) -----
 # Build a combined DataFrame for currents and voltages
 
 iv_dict = {
@@ -308,16 +300,7 @@ if num_cells > 1:
 
 df_iv = pd.DataFrame(iv_dict)
 
-# Export versions
-csv_iv = df_iv.to_csv(index=False).encode("utf-8")
 txt_iv = df_iv.to_string(index=False)
-
-st.download_button(
-    "📥 Download IV Curves (CSV)",
-    data=csv_iv,
-    file_name="IV_curves.csv",
-    mime="text/csv"
-)
 
 st.download_button(
     "📥 Download IV Curves (TXT)",
@@ -325,6 +308,7 @@ st.download_button(
     file_name="IV_curves.txt",
     mime="text/plain"
 )
+
 
 # -----------------------------
 # About / Footer
