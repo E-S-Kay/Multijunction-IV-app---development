@@ -269,15 +269,19 @@ fig.update_xaxes(range=[-0.2, x_max])
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Download Buttons
+# Download Buttons mit eigenem Basisnamen
 # -----------------------------
+st.markdown("### Download Options")
+
+# Eingabe für Basis-Dateiname
+base_filename = st.text_input("Base filename for export:", value="solar_simulation")
 
 # 1) Results table
 csv_results = df_display.to_csv(index=False).encode('utf-8')
 st.download_button(
     label="Download Results Table (CSV)",
     data=csv_results,
-    file_name="results_table.csv",
+    file_name=f"{base_filename}_Results_Table.csv",
     mime="text/csv"
 )
 
@@ -296,7 +300,7 @@ csv_iv = df_iv.to_csv(index=False).encode('utf-8')
 st.download_button(
     label="Download IV Curves (CSV)",
     data=csv_iv,
-    file_name="iv_curves.csv",
+    file_name=f"{base_filename}_IV_Curves.csv",
     mime="text/csv"
 )
 
@@ -318,9 +322,10 @@ csv_input = df_input.to_csv(index=False).encode('utf-8')
 st.download_button(
     label="Download Input Parameters (CSV)",
     data=csv_input,
-    file_name="input_parameters.csv",
+    file_name=f"{base_filename}_Input_Parameters.csv",
     mime="text/csv"
 )
+
 
 # -----------------------------
 # About / Footer
