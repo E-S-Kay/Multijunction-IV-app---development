@@ -269,7 +269,7 @@ fig.update_xaxes(range=[-0.2, x_max])
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Download Buttons mit eigenem Basisnamen
+# Download Buttons mit eigenem Basisnamen (.txt)
 # -----------------------------
 st.markdown("### Download Options")
 
@@ -277,12 +277,12 @@ st.markdown("### Download Options")
 base_filename = st.text_input("Base filename for export:", value="solar_simulation")
 
 # 1) Results table
-csv_results = df_display.to_csv(index=False).encode('utf-8')
+txt_results = df_display.to_csv(index=False, sep='\t').encode('utf-8')
 st.download_button(
-    label="Download Results Table (CSV)",
-    data=csv_results,
-    file_name=f"{base_filename}_Results_Table.csv",
-    mime="text/csv"
+    label="Download Results Table (.txt)",
+    data=txt_results,
+    file_name=f"{base_filename}_Results_Table.txt",
+    mime="text/plain"
 )
 
 # 2) IV curves
@@ -296,12 +296,12 @@ if num_cells > 1:
     iv_dict["Jstack [mA/cm²]"] = J_common
 
 df_iv = pd.DataFrame(iv_dict)
-csv_iv = df_iv.to_csv(index=False).encode('utf-8')
+txt_iv = df_iv.to_csv(index=False, sep='\t').encode('utf-8')
 st.download_button(
-    label="Download IV Curves (CSV)",
-    data=csv_iv,
-    file_name=f"{base_filename}_IV_Curves.csv",
-    mime="text/csv"
+    label="Download IV Curves (.txt)",
+    data=txt_iv,
+    file_name=f"{base_filename}_IV_Curves.txt",
+    mime="text/plain"
 )
 
 # 3) Input parameters
@@ -318,13 +318,14 @@ for i, c in enumerate(cells):
     })
 
 df_input = pd.DataFrame(input_list)
-csv_input = df_input.to_csv(index=False).encode('utf-8')
+txt_input = df_input.to_csv(index=False, sep='\t').encode('utf-8')
 st.download_button(
-    label="Download Input Parameters (CSV)",
-    data=csv_input,
-    file_name=f"{base_filename}_Input_Parameters.csv",
-    mime="text/csv"
+    label="Download Input Parameters (.txt)",
+    data=txt_input,
+    file_name=f"{base_filename}_Input_Parameters.txt",
+    mime="text/plain"
 )
+
 
 
 # -----------------------------
