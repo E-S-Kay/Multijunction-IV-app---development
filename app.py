@@ -268,37 +268,67 @@ fig.update_xaxes(range=[-0.2, x_max])
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Export data (IV curves) — formatted TXT
+# Unified Export as ZIP (IV curves + results + input parameters)
 # -----------------------------
+import io
+import zipfile
+from datetime import datetime
 
-st.markdown("### Export IV Data")
+st.markdown("### Export All Data (ZIP)")
 
-# Build columns in requested order:
-# V1, J1, V2, J2, ..., Vn, Jn, Vmulti, Jmulti
+# Default filename suggestion
+default_name = f"solarcell_export_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
+base_filename = st.text_input(
+    "Export filename (without extension):",
+    value=default_name
+)
+
+# --- 1) Results table TXT ---
+results_txt = df_display.to_string(index=False)
+
+# --- 2) IV curves TXT (using your new required structure) ---
 iv_export_dict = {}
 
 for i, V in enumerate(V_all):
     iv_export_dict[f"V_subcell_{i+1} (V)"] = V
-    iv_export_dict[f"J_subcell_{i+1} (mA/cm²)"] = J_common  # identical J for all
+    iv_export_dict[f"J_subcell_{i+1} (mA/cm²)"] = J_common
 
-# Add multijunction (only if >1 cell)
 if num_cells > 1:
     iv_export_dict["V_multijunction (V)"] = V_stack
     iv_export_dict["J_multijunction (mA/cm²)"] = J_common
 
 df_iv_export = pd.DataFrame(iv_export_dict)
+iv_txt = df_iv_export.to_string(index=False)
 
-# Convert to TXT
-txt_iv_export = df_iv_export.to_string(index=False)
+# --- 3) Input parameters TXT ---
+param_output = []
+for i, p in enumerate(params):
+    param_output.append(f"--- Subcell {i+1} ---")
+    for key, value in p.items():
+        param_output.append(f"{key}: {value}")
+    param_output.append("")  # blank line
 
+param_txt = "\n".join(param_output)
+
+# --- ZIP creation in memory ---
+zip_buffer = io.BytesIO()
+
+with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_file:
+    zip_file.writestr(f"{base_filename}_IV_curves.txt", iv_txt)
+    zip_file.writestr(f"{base_filename}_results_table.txt", results_txt)
+    zip_file.writestr(f"{base_filename}_input_parameters.txt", param_txt)
+
+# Move cursor to start
+zip_buffer.seek(0)
+
+# --- Download button ---
 st.download_button(
-    "📥 Download Formatted IV Curves (TXT)",
-    data=txt_iv_export,
-    file_name="IV_curves_formatted.txt",
-    mime="text/plain"
+    label="📦 Download All (ZIP)",
+    data=zip_buffer,
+    file_name=f"{base_filename}.zip",
+    mime="application/zip"
 )
-
 
 # -----------------------------
 # About / Footer
