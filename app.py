@@ -102,7 +102,7 @@ def to_float(text, default=0.0):
         return float(default)
 
 def generate_shades(hex_color, num_shades):
-    """Generiert Nuancen von hell nach dunkel für eine Hex-Farbe."""
+    """Generates light-to-dark shades for a given hex color."""
     if num_shades <= 1:
         return [hex_color]
     hex_color = hex_color.lstrip('#')
@@ -127,9 +127,25 @@ plotly_colors = ["#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A", "#19D3F3
 st.set_page_config(page_title="Multijunction IV Simulator", layout="centered")
 st.title("Multijunction Solar Cell IV Simulator with Sweep")
 
+# Info & Credits Expander
+with st.expander("ℹ️ About & Contact", expanded=False):
+    st.markdown("""
+    **What does this simulator do?** This simulator calculates and visualizes current-voltage (IV) curves and key performance parameters ($J_{sc}$, $V_{oc}$, $FF$, $PCE$) of multijunction solar cells and their individual subcells based on the extended single-diode model.
+
+    **Key Features:**
+    * Flexible configuration for 1 to 6 subcells.
+    * Parameter sweeps for targeted analysis of individual cell parameters.
+    * Interactive plot including Maximum Power Point (MPP) calculation.
+    * Full export of simulation results and IV curve data including metadata headers.
+
+    ---
+    **Developed by:** Eike Köhnen (Helmholtz-Zentrum Berlin)  
+    **Contact (bugs, improvements, feedback):** [eike.koehnen@helmholtz-berlin.de](mailto:eike.koehnen@helmholtz-berlin.de)
+    """)
+
 num_cells = st.sidebar.selectbox("Number of subcells", [1, 2, 3, 4, 5, 6], index=1)
 
-# Standardwerte für bis zu 6 Subzellen
+# Default values for up to 6 subcells
 default_jph = ["30.0", "20.0", "15.0", "12.0", "10.0", "8.0"]
 default_j0 = ["1e-10", "1e-12", "1e-14", "1e-16", "1e-18", "1e-20"]
 
@@ -137,7 +153,7 @@ cells = []
 for i in range(num_cells):
     color = plotly_colors[i % len(plotly_colors)]
     
-    # Label mit farbigem Hintergrund und schwarzem Text
+    # Label with colored background and black text
     st.sidebar.markdown(
         f"""
         <div style="background-color: {color}; padding: 8px 12px; border-radius: 8px; margin-top: 15px; margin-bottom: 10px; color: #000000; font-weight: bold; font-size: 16px;">
@@ -228,7 +244,7 @@ for val in sweep_values:
 df_results = pd.DataFrame(results)
 
 # -----------------------------
-# Display Table (mit dynamischen Farbnuancen im Sweep-Fall)
+# Display Table (with dynamic shades for sweeps)
 # -----------------------------
 st.write("### Results")
 
@@ -333,11 +349,11 @@ else:
             line=dict(color="black", width=3)
         ))
 
-# Vertikale Linie bei X=0 und horizontale Linie bei Y=0
+# Zero reference lines
 fig.add_vline(x=0, line_width=1, line_dash="dash", line_color="gray")
 fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="gray")
 
-# Maximalen x-Wert dynamisch aus allen Daten berechnen
+# Dynamically calculate upper bound for X-axis
 max_v = 0.0
 for V_step in all_V_steps:
     for v_arr in V_step:
@@ -351,14 +367,16 @@ fig.update_xaxes(range=[-0.1, max_v * 1.05])
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Download Options (.txt mit Header-Parametern)
+# Download Options (.txt with header parameters)
 # -----------------------------
 st.markdown("### Download Options")
 base_filename = st.text_input("Base filename for export:", value="solar_simulation")
 
-# Parameter-Header für die Exportdateien generieren
+# Generate metadata header
 param_header = "# ==========================================\n"
 param_header += "# Simulation Input Parameters\n"
+param_header += "# Developed by: Eike Köhnen (Helmholtz-Zentrum Berlin)\n"
+param_header += "# Contact: eike.koehnen@helmholtz-berlin.de\n"
 param_header += "# ==========================================\n"
 for i, c in enumerate(cells):
     param_header += f"# Subcell {i+1}: Jph={c['Jph']} mA/cm², J0={c['J0']} mA/cm², n={c['n']}, Rs={c['Rs']} Ω·cm², Rsh={c['Rsh']} Ω·cm², T={c['T']} K\n"
