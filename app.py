@@ -204,8 +204,13 @@ for i in range(num_cells):
 
 if num_cells > 1:
     fig.add_trace(go.Scatter(x=V_stack, y=J_common, mode="lines", name="Multijunction", line=dict(color="black", width=3)))
+    
+# Maximalen x-Wert dynamisch aus den Daten berechnen
+max_v = max([np.nanmax(v) for v in V_all])
+if num_cells > 1:
+    max_v = max(max_v, np.nanmax(V_stack))
 
-# Hier wird das x-Achsen-Limit gesetzt (-0.1 bis auto)
+# Hier wird das x-Achsen-Limit gesetzt
 fig.update_xaxes(range=[-0.1, max_v * 1.05])
 
 st.plotly_chart(fig, use_container_width=True)
