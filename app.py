@@ -329,7 +329,7 @@ format_dict = {
     "FF [%]": "{:.2f}",
     "PCE [mW/cm²]": "{:.2f}",
     "Jmpp [mA/cm²]": "{:.2f}",
-    "Vmpp [V]": "{:.2f}",
+    "Vmpp [V]": "{:.3f}",
 }
 
 if sweep_enable:
