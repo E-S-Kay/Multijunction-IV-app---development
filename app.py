@@ -13,12 +13,10 @@ def vector_lambertw_exp(L):
     L = np.asarray(L, dtype=float)
     res = np.zeros_like(L)
     
-    # Standard computation for safe range
     safe_mask = L <= 700
     if np.any(safe_mask):
         res[safe_mask] = np.real(lambertw(np.exp(L[safe_mask])))
         
-    # Asymptotic approximation + Halley refinement for large numbers
     large_mask = ~safe_mask
     if np.any(large_mask):
         L_large = L[large_mask]
@@ -78,7 +76,6 @@ def generate_shades(hex_color, num_shades):
     return shades
 
 def calculate_iv_fast(Jph_mA, J0_mA, n, Rs, Rsh, T, J_common_mA):
-    """Fully vectorized IV curve calculation using analytical Lambert W function."""
     q = 1.602176634e-19
     k = 1.380649e-23
     
@@ -134,14 +131,16 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param_key, sweep_value
             V_all.append(V)
             P_all.append(P)
             FF = calc_FF(Jsc, Voc, Jmpp, Vmpp)
+            
+            # Hier direkt mit den Ziel-Nachkommastellen runden für den Export & Anzeige
             rows.append({
                 "Label": f"Subcell {i+1}",
-                "Jsc [mA/cm²]": Jsc, 
-                "Voc [V]": Voc, 
-                "FF [%]": FF * 100.0 if not np.isnan(FF) else np.nan,
-                "PCE [mW/cm²]": Pmpp, 
-                "Jmpp [mA/cm²]": Jmpp, 
-                "Vmpp [V]": Vmpp
+                "Jsc [mA/cm²]": round(Jsc, 2) if not np.isnan(Jsc) else np.nan, 
+                "Voc [V]": round(Voc, 3) if not np.isnan(Voc) else np.nan, 
+                "FF [%]": round(FF * 100.0, 2) if not np.isnan(FF) else np.nan,
+                "PCE [mW/cm²]": round(Pmpp, 2) if not np.isnan(Pmpp) else np.nan, 
+                "Jmpp [mA/cm²]": round(Jmpp, 2) if not np.isnan(Jmpp) else np.nan, 
+                "Vmpp [V]": round(Vmpp, 2) if not np.isnan(Vmpp) else np.nan
             })
         
         all_V_steps.append(V_all)
@@ -156,21 +155,22 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param_key, sweep_value
             P_mpp_stack = float(P_stack[idx_mpp_stack])
             Jsc_stack = interpolate_Jsc_two_points_linreg(V_stack, J_common)
             FF_stack = calc_FF(Jsc_stack, Voc_stack, J_mpp_stack, V_mpp_stack)
+            
             rows.append({
                 "Label": "Multijunction",
-                "Jsc [mA/cm²]": Jsc_stack, 
-                "Voc [V]": Voc_stack, 
-                "FF [%]": FF_stack * 100.0 if not np.isnan(FF_stack) else np.nan,
-                "PCE [mW/cm²]": P_mpp_stack, 
-                "Jmpp [mA/cm²]": J_mpp_stack, 
-                "Vmpp [V]": V_mpp_stack
+                "Jsc [mA/cm²]": round(Jsc_stack, 2) if not np.isnan(Jsc_stack) else np.nan, 
+                "Voc [V]": round(Voc_stack, 3) if not np.isnan(Voc_stack) else np.nan, 
+                "FF [%]": round(FF_stack * 100.0, 2) if not np.isnan(FF_stack) else np.nan,
+                "PCE [mW/cm²]": round(P_mpp_stack, 2) if not np.isnan(P_mpp_stack) else np.nan, 
+                "Jmpp [mA/cm²]": round(J_mpp_stack, 2) if not np.isnan(J_mpp_stack) else np.nan, 
+                "Vmpp [V]": round(V_mpp_stack, 2) if not np.isnan(V_mpp_stack) else np.nan
             })
             all_V_stack_steps.append(V_stack)
 
         for r in rows:
             r_copy = r.copy()
             if sweep_enable:
-                r_copy["SweepValue"] = val
+                r_copy["SweepValue"] = round(val, 3) if val is not None else None
             results.append(r_copy)
 
     df_results = pd.DataFrame(results)
@@ -179,7 +179,7 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param_key, sweep_value
 # -----------------------------
 # Dynamic Color Palette
 # -----------------------------
-plotly_colors = ["#87CEEB", "#FF7F50", "#98FF98", "#FFDAB9", "#FFD700", "E6E6FA"]
+plotly_colors = ["#87CEEB", "#FF7F50", "#98FF98", "#FFDAB9", "#FFD700", "#E6E6FA"]
 
 # -----------------------------
 # Streamlit UI
@@ -187,7 +187,6 @@ plotly_colors = ["#87CEEB", "#FF7F50", "#98FF98", "#FFDAB9", "#FFD700", "E6E6FA"
 st.set_page_config(page_title="Multijunction IV Simulator", layout="wide")
 st.title("Multijunction Solar Cell IV Simulator with Sweep")
 
-# Info & Credits Expander
 with st.expander("ℹ️ About & Contact", expanded=False):
     st.markdown("""
     **What does this simulator do?** This simulator calculates and visualizes current-voltage (IV) curves and key performance parameters ($J_{sc}$, $V_{oc}$, $FF$, $PCE$) of multijunction solar cells and their individual subcells based on the extended single-diode model.
@@ -205,7 +204,6 @@ with st.expander("ℹ️ About & Contact", expanded=False):
 
 num_cells = st.sidebar.selectbox("Number of subcells", [1, 2, 3, 4, 5, 6], index=1)
 
-# Default values for up to 6 subcells
 default_jph = ["30.0", "20.0", "15.0", "12.0", "10.0", "8.0"]
 default_j0 = ["1e-10", "1e-12", "1e-14", "1e-16", "1e-18", "1e-20"]
 
@@ -319,23 +317,19 @@ def style_table(df):
 
     return styles
 
-# Dynamischer Name für die Sweep-Spalte
+# Formatierungs-Dictionary für das saubere Anzeigen der gerundeten Werte
 sweep_col_name = f"SweepValue ({sweep_param_display})"
-
-# Definieren der Formatierungs-Regeln als Dictionary für Pandas Styler
 format_dict = {
     "Jsc [mA/cm²]": "{:.2f}",
     "Voc [V]": "{:.3f}",
     "FF [%]": "{:.2f}",
     "PCE [mW/cm²]": "{:.2f}",
     "Jmpp [mA/cm²]": "{:.2f}",
-    "Vmpp [V]": "{:.3f}",
+    "Vmpp [V]": "{:.2f}",
 }
-
 if sweep_enable:
     format_dict[sweep_col_name] = "{:.3f}"
 
-# Tabelle stylen (Farben + Formatierung in einem Rutsch)
 styled_df = (
     df_results.style
     .apply(style_table, axis=None)
@@ -443,6 +437,7 @@ if sweep_enable and len(sweep_values) > 1:
     param_header += f"# Sweep Configuration: Subcell {sweep_cell}, Parameter={sweep_param_display}, Min={sweep_min}, Max={sweep_max}, Steps={int(sweep_steps)}\n"
 param_header += "# ==========================================\n\n"
 
+# Da `df_results` nun direkt die gerundeten Werte enthält, übernimmt der Export diese Formatierung perfekt
 txt_results_content = param_header + df_results.to_csv(index=False, sep='\t')
 txt_results = txt_results_content.encode('utf-8')
 st.download_button("Download Results Table (.txt)", data=txt_results, file_name=f"{base_filename}_Results_Table.txt", mime="text/plain")
