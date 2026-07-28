@@ -344,16 +344,6 @@ styled_df = (
 
 st.dataframe(styled_df, use_container_width=True)
 
-df_results_display = df_results.copy()
-for col, decimals in rounding_dict.items():
-    if col in df_results_display.columns:
-        df_results_display[col] = df_results_display[col].round(decimals)
-
-if sweep_enable and f"SweepValue ({sweep_param_display})" in df_results_display.columns:
-    df_results_display[f"SweepValue ({sweep_param_display})"] = df_results_display[f"SweepValue ({sweep_param_display})"].round(3)
-
-st.dataframe(df_results_display.style.apply(style_table, axis=None), use_container_width=True)
-
 # -----------------------------
 # Plot
 # -----------------------------
