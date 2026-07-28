@@ -204,6 +204,10 @@ for i in range(num_cells):
 
 if num_cells > 1:
     fig.add_trace(go.Scatter(x=V_stack, y=J_common, mode="lines", name="Multijunction", line=dict(color="black", width=3)))
+
+# Vertikale Linie bei X=0 und horizontale Linie bei Y=0
+fig.add_vline(x=0, line_width=1, line_dash="dash", line_color="gray")
+fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="gray")
     
 # Maximalen x-Wert dynamisch aus den Daten berechnen
 max_v = max([np.nanmax(v) for v in V_all])
