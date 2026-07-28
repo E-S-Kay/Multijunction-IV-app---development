@@ -107,34 +107,54 @@ def fmt(x, dec=2):
     return f"{x:.{dec}f}"
 
 # -----------------------------
+# Dynamic Color Palette (6 Colors for Subcells)
+# -----------------------------
+plotly_colors = ["#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A", "#19D3F3"]
+
+# -----------------------------
 # Streamlit UI
 # -----------------------------
 st.set_page_config(page_title="Multijunction IV Simulator", layout="centered")
 st.title("Multijunction Solar Cell IV Simulator with Sweep")
 
-num_cells = st.sidebar.selectbox("Number of subcells", [1,2,3,4], index=1)
+num_cells = st.sidebar.selectbox("Number of subcells", [1, 2, 3, 4, 5, 6], index=1)
 
-cells = []
-
-plotly_colors = ["#636EFA", "#EF553B", "#00CC96", "#AB63FA"]
+# Dynamic CSS Styling für die Sidebar-Eingabefelder
+css = ""
 for i in range(num_cells):
     color = plotly_colors[i % len(plotly_colors)]
+    bg_color = f"{color}25"  # ~15% Transparenz
     
-    # Überschrift im exakten Plotly-Farbton mit farbigem Unterstrich
-    st.sidebar.markdown(
-        f"<h3 style='color: {color}; border-bottom: 2px solid {color}; padding-bottom: 4px; margin-top: 15px;'>"
-        f"Subcell {i+1}</h3>", 
-        unsafe_allow_html=True
-    )
-    Jph = to_float(st.sidebar.text_input(f"Subcell {i+1}: Jph [mA/cm²]", "30.0" if i==0 else "20.0", key=f"Jph{i}"))
-    J0 = to_float(st.sidebar.text_input(f"Subcell {i+1}: J0 [mA/cm²]", "1e-10" if i==0 else "1e-12", key=f"J0{i}"))
+    css += f"""
+    div[data-testid="stSidebar"] div[data-baseweb="input"]:has(input[aria-label*="Subcell {i+1}"]) {{
+        background-color: {bg_color} !important;
+        border-left: 5px solid {color} !important;
+        border-radius: 4px !important;
+    }}
+    div[data-testid="stSidebar"] div[data-baseweb="input"]:has(input[aria-label*="Subcell {i+1}"]) * {{
+        background-color: transparent !important;
+    }}
+    """
+
+st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
+
+# Standardwerte für bis zu 6 Subzellen
+default_jph = ["30.0", "20.0", "15.0", "12.0", "10.0", "8.0"]
+default_j0 = ["1e-10", "1e-12", "1e-14", "1e-16", "1e-18", "1e-20"]
+
+cells = []
+for i in range(num_cells):
+    st.sidebar.markdown(f"### Subcell {i+1}")
+    jph_def = default_jph[i] if i < len(default_jph) else "10.0"
+    j0_def = default_j0[i] if i < len(default_j0) else "1e-12"
+
+    Jph = to_float(st.sidebar.text_input(f"Subcell {i+1}: Jph [mA/cm²]", jph_def, key=f"Jph{i}"))
+    J0 = to_float(st.sidebar.text_input(f"Subcell {i+1}: J0 [mA/cm²]", j0_def, key=f"J0{i}"))
     n = to_float(st.sidebar.text_input(f"Subcell {i+1}: Ideality factor n", "1.0", key=f"n{i}"))
     Rs = to_float(st.sidebar.text_input(f"Subcell {i+1}: Rs [Ω·cm²]", "0.2", key=f"Rs{i}"))
     Rsh = to_float(st.sidebar.text_input(f"Subcell {i+1}: Rsh [Ω·cm²]", "1000.0", key=f"Rsh{i}"))
     T = to_float(st.sidebar.text_input(f"Subcell {i+1}: Temperature T [K]", "298.0", key=f"T{i}"))
     cells.append({"Jph": Jph, "J0": J0, "n": n, "Rs": Rs, "Rsh": Rsh, "T": T})
-
-
 
 # -----------------------------
 # Sweep Options
@@ -143,8 +163,8 @@ st.sidebar.markdown("## Parameter Sweep")
 sweep_enable = st.sidebar.checkbox("Enable Sweep", value=False)
 
 if sweep_enable:
-    sweep_cell = st.sidebar.selectbox("Select Subcell to sweep", list(range(1,num_cells+1)))
-    sweep_param = st.sidebar.selectbox("Parameter to sweep", ["Jph","J0","n","Rs","Rsh","T"])
+    sweep_cell = st.sidebar.selectbox("Select Subcell to sweep", list(range(1, num_cells+1)))
+    sweep_param = st.sidebar.selectbox("Parameter to sweep", ["Jph", "J0", "n", "Rs", "Rsh", "T"])
     sweep_min = st.sidebar.number_input("Min value", value=float(cells[sweep_cell-1][sweep_param]))
     sweep_max = st.sidebar.number_input("Max value", value=float(cells[sweep_cell-1][sweep_param]))
     sweep_steps = st.sidebar.number_input("Number of steps", value=5, min_value=2)
@@ -160,11 +180,9 @@ J_common = np.linspace(0.0, max([c["Jph"] for c in cells]), 800)
 results = []
 
 for val in sweep_values:
-    # Apply sweep value
     if val is not None:
         cells[sweep_cell-1][sweep_param] = val
     
-    # Compute per subcell
     V_all, P_all, rows = [], [], []
     for i, c in enumerate(cells):
         V, P, Voc, Vmpp, Jmpp, Pmpp, Jsc = calculate_iv(c["Jph"], c["J0"], c["n"], c["Rs"], c["Rsh"], c["T"], J_common)
@@ -176,7 +194,6 @@ for val in sweep_values:
             "Jsc": Jsc, "Voc": Voc, "FF": FF,
             "PCE": Pmpp, "Jmpp": Jmpp, "Vmpp": Vmpp
         })
-    # Multijunction
     if num_cells > 1:
         V_stack = np.sum(np.vstack(V_all), axis=0)
         P_stack = V_stack * J_common
@@ -192,7 +209,6 @@ for val in sweep_values:
             "Jsc": Jsc_stack, "Voc": Voc_stack, "FF": FF_stack,
             "PCE": P_mpp_stack, "Jmpp": J_mpp_stack, "Vmpp": V_mpp_stack
         })
-    # Save result for this sweep value
     for r in rows:
         r_copy = r.copy()
         r_copy["SweepValue"] = val if val is not None else np.nan
@@ -211,21 +227,33 @@ st.dataframe(df_results)
 # -----------------------------
 fig = go.Figure()
 for i in range(num_cells):
-    fig.add_trace(go.Scatter(x=V_all[i], y=J_common, mode="lines", name=f"Subcell {i+1}"))
+    fig.add_trace(go.Scatter(
+        x=V_all[i],
+        y=J_common,
+        mode="lines",
+        name=f"Subcell {i+1}",
+        line=dict(color=plotly_colors[i % len(plotly_colors)])  # Gleiche Farbe wie in der Sidebar
+    ))
 
 if num_cells > 1:
-    fig.add_trace(go.Scatter(x=V_stack, y=J_common, mode="lines", name="Multijunction", line=dict(color="black", width=3)))
+    fig.add_trace(go.Scatter(
+        x=V_stack,
+        y=J_common,
+        mode="lines",
+        name="Multijunction",
+        line=dict(color="black", width=3)
+    ))
 
 # Vertikale Linie bei X=0 und horizontale Linie bei Y=0
 fig.add_vline(x=0, line_width=1, line_dash="dash", line_color="gray")
 fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="gray")
-    
+
 # Maximalen x-Wert dynamisch aus den Daten berechnen
 max_v = max([np.nanmax(v) for v in V_all])
 if num_cells > 1:
     max_v = max(max_v, np.nanmax(V_stack))
 
-# Hier wird das x-Achsen-Limit gesetzt
+# x-Achse bei -0.1 starten lassen, x_max dynamisch setzen
 fig.update_xaxes(range=[-0.1, max_v * 1.05])
 
 st.plotly_chart(fig, use_container_width=True)
