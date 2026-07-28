@@ -371,12 +371,13 @@ st.download_button("Download Results Table (.txt)", data=txt_results, file_name=
 iv_dict = {}
 if sweep_enable and len(sweep_values) > 1:
     for step_i, val in enumerate(sweep_values):
+        val_str = f"{sweep_param}={val:.2g}"
         for i in range(num_cells):
-            iv_dict[f"V{i+1}_step{step_i+1} [V]"] = all_V_steps[step_i][i]
-            iv_dict[f"J{i+1}_step{step_i+1} [mA/cm²]"] = J_common
+            iv_dict[f"V{i+1} ({val_str}) [V]"] = all_V_steps[step_i][i]
+            iv_dict[f"J{i+1} ({val_str}) [mA/cm²]"] = J_common
         if num_cells > 1:
-            iv_dict[f"Vmultijunction_step{step_i+1} [V]"] = all_V_stack_steps[step_i]
-            iv_dict[f"Jmultijunction_step{step_i+1} [mA/cm²]"] = J_common
+            iv_dict[f"Vmultijunction ({val_str}) [V]"] = all_V_stack_steps[step_i]
+            iv_dict[f"Jmultijunction ({val_str}) [mA/cm²]"] = J_common
 else:
     for i in range(num_cells):
         iv_dict[f"V{i+1} [V]"] = all_V_steps[0][i]
