@@ -136,8 +136,12 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param_key, sweep_value
             FF = calc_FF(Jsc, Voc, Jmpp, Vmpp)
             rows.append({
                 "Label": f"Subcell {i+1}",
-                "Jsc [mA/cm²]": Jsc, "Voc [V]": Voc, "FF": FF,
-                "PCE [mW/cm²]": Pmpp, "Jmpp [mA/cm²]": Jmpp, "Vmpp [V]": Vmpp
+                "Jsc [mA/cm²]": Jsc, 
+                "Voc [V]": Voc, 
+                "FF [%]": FF * 100.0 if not np.isnan(FF) else np.nan,
+                "PCE [mW/cm²]": Pmpp, 
+                "Jmpp [mA/cm²]": Jmpp, 
+                "Vmpp [V]": Vmpp
             })
         
         all_V_steps.append(V_all)
@@ -154,8 +158,12 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param_key, sweep_value
             FF_stack = calc_FF(Jsc_stack, Voc_stack, J_mpp_stack, V_mpp_stack)
             rows.append({
                 "Label": "Multijunction",
-                "Jsc [mA/cm²]": Jsc_stack, "Voc [V]": Voc_stack, "FF": FF_stack,
-                "PCE [mW/cm²]": P_mpp_stack, "Jmpp [mA/cm²]": J_mpp_stack, "Vmpp [V]": V_mpp_stack
+                "Jsc [mA/cm²]": Jsc_stack, 
+                "Voc [V]": Voc_stack, 
+                "FF [%]": FF_stack * 100.0 if not np.isnan(FF_stack) else np.nan,
+                "PCE [mW/cm²]": P_mpp_stack, 
+                "Jmpp [mA/cm²]": J_mpp_stack, 
+                "Vmpp [V]": V_mpp_stack
             })
             all_V_stack_steps.append(V_stack)
 
@@ -231,7 +239,6 @@ for i in range(num_cells):
 st.sidebar.markdown("## Parameter Sweep")
 sweep_enable = st.sidebar.checkbox("Enable Sweep", value=False)
 
-# Mapping dictionary for parameters, labels and units
 param_options = {
     "Jph": {"label": "Jph [mA/cm²]", "key": "Jph"},
     "J0": {"label": "J0 [mA/cm²]", "key": "J0"},
@@ -265,7 +272,6 @@ df_results, all_V_steps, all_V_stack_steps, J_common = run_simulation(
     cells, sweep_enable, sweep_cell, sweep_param_key, sweep_values
 )
 
-# Rename SweepValue column in results if enabled to include units
 if sweep_enable and "SweepValue" in df_results.columns:
     df_results = df_results.rename(columns={"SweepValue": f"SweepValue ({sweep_param_display})"})
 
@@ -313,10 +319,23 @@ def style_table(df):
 
     return styles
 
-# Numerical columns rounded to 3 decimal places for cleaner table UI
+# Mapping der Dezimalstellen für die exakte Formatierung in der UI
+rounding_dict = {
+    "Jsc [mA/cm²]": 2,
+    "Voc [V]": 3,
+    "FF [%]": 2,
+    "PCE [mW/cm²]": 2,
+    "Jmpp [mA/cm²]": 2,
+    "Vmpp [V]": 2
+}
+
 df_results_display = df_results.copy()
-num_cols = [c for c in df_results_display.columns if c != "Label"]
-df_results_display[num_cols] = df_results_display[num_cols].round(3)
+for col, decimals in rounding_dict.items():
+    if col in df_results_display.columns:
+        df_results_display[col] = df_results_display[col].round(decimals)
+
+if sweep_enable and f"SweepValue ({sweep_param_display})" in df_results_display.columns:
+    df_results_display[f"SweepValue ({sweep_param_display})"] = df_results_display[f"SweepValue ({sweep_param_display})"].round(3)
 
 st.dataframe(df_results_display.style.apply(style_table, axis=None), use_container_width=True)
 
