@@ -115,8 +115,17 @@ st.title("Multijunction Solar Cell IV Simulator with Sweep")
 num_cells = st.sidebar.selectbox("Number of subcells", [1,2,3,4], index=1)
 
 cells = []
+
+plotly_colors = ["#636EFA", "#EF553B", "#00CC96", "#AB63FA"]
 for i in range(num_cells):
-    st.sidebar.markdown(f"### Subcell {i+1}")
+    color = plotly_colors[i % len(plotly_colors)]
+    
+    # Überschrift im exakten Plotly-Farbton mit farbigem Unterstrich
+    st.sidebar.markdown(
+        f"<h3 style='color: {color}; border-bottom: 2px solid {color}; padding-bottom: 4px; margin-top: 15px;'>"
+        f"Subcell {i+1}</h3>", 
+        unsafe_allow_html=True
+    )
     Jph = to_float(st.sidebar.text_input(f"Subcell {i+1}: Jph [mA/cm²]", "30.0" if i==0 else "20.0", key=f"Jph{i}"))
     J0 = to_float(st.sidebar.text_input(f"Subcell {i+1}: J0 [mA/cm²]", "1e-10" if i==0 else "1e-12", key=f"J0{i}"))
     n = to_float(st.sidebar.text_input(f"Subcell {i+1}: Ideality factor n", "1.0", key=f"n{i}"))
@@ -125,31 +134,7 @@ for i in range(num_cells):
     T = to_float(st.sidebar.text_input(f"Subcell {i+1}: Temperature T [K]", "298.0", key=f"T{i}"))
     cells.append({"Jph": Jph, "J0": J0, "n": n, "Rs": Rs, "Rsh": Rsh, "T": T})
 
-# -----------------------------
-# Dynamic Styling for Sidebar Inputs (Matching Plotly Colors)
-# -----------------------------
-plotly_colors = ["#636EFA", "#EF553B", "#00CC96", "#AB63FA"]
 
-css = ""
-for i in range(num_cells):
-    color = plotly_colors[i % len(plotly_colors)]
-    bg_color = f"{color}25"  # ~15% Transparenz für gute Lesbarkeit
-    
-    css += f"""
-    /* 1. Äußeren BaseWeb-Container einfärben & Kanten-Akzent setzen */
-    div[data-testid="stSidebar"] div[data-baseweb="input"]:has(input[aria-label*="Subcell {i+1}"]) {{
-        background-color: {bg_color} !important;
-        border-left: 5px solid {color} !important;
-        border-radius: 4px !important;
-    }}
-    
-    /* 2. WICHTIG: Alle inneren Ebenen (*) transparent machen, damit die Farbe sichtbar wird */
-    div[data-testid="stSidebar"] div[data-baseweb="input"]:has(input[aria-label*="Subcell {i+1}"]) * {{
-        background-color: transparent !important;
-    }}
-    """
-
-st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
 
 # -----------------------------
 # Sweep Options
