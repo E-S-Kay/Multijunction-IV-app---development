@@ -427,9 +427,6 @@ base_filename = st.text_input("Base filename for export:", value="solar_simulati
 
 param_header = "# ==========================================\n"
 param_header += "# Simulation Input Parameters\n"
-param_header += "# Developed by: Eike Köhnen (Helmholtz-Zentrum Berlin)\n"
-param_header += "# Contact: eike.koehnen@helmholtz-berlin.de\n"
-param_header += "# ==========================================\n"
 for i, c in enumerate(cells):
     param_header += f"# Subcell {i+1}: Jph={c['Jph']} mA/cm², J0={c['J0']} mA/cm², n={c['n']}, Rs={c['Rs']} Ω·cm², Rsh={c['Rsh']} Ω·cm², T={c['T']} K\n"
 if sweep_enable and len(sweep_values) > 1:
