@@ -377,6 +377,9 @@ fig.update_layout(
     yaxis_title="Current Density J [mA/cm²]",
     template="plotly_white",
     margin=dict(l=20, r=20, t=30, b=20)
+    autosize=True,
+    # Erzwingt ein Seitenverhältnis von 16:9 (Breite : Höhe -> 1.77 : 1)
+    # Beachte: Plotly berechnet die Höhe hier über das Verhältnis zur Breite
 )
 fig.update_xaxes(range=[-0.1, max_v * 1.05])
 
