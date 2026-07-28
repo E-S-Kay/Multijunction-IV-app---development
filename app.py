@@ -132,7 +132,6 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param_key, sweep_value
             P_all.append(P)
             FF = calc_FF(Jsc, Voc, Jmpp, Vmpp)
             
-            # Hier direkt mit den Ziel-Nachkommastellen runden für den Export & Anzeige
             rows.append({
                 "Label": f"Subcell {i+1}",
                 "Jsc [mA/cm²]": round(Jsc, 2) if not np.isnan(Jsc) else np.nan, 
@@ -140,7 +139,7 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param_key, sweep_value
                 "FF [%]": round(FF * 100.0, 2) if not np.isnan(FF) else np.nan,
                 "PCE [mW/cm²]": round(Pmpp, 2) if not np.isnan(Pmpp) else np.nan, 
                 "Jmpp [mA/cm²]": round(Jmpp, 2) if not np.isnan(Jmpp) else np.nan, 
-                "Vmpp [V]": round(Vmpp, 2) if not np.isnan(Vmpp) else np.nan
+                "Vmpp [V]": round(Vmpp, 3) if not np.isnan(Vmpp) else np.nan
             })
         
         all_V_steps.append(V_all)
@@ -163,7 +162,7 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param_key, sweep_value
                 "FF [%]": round(FF_stack * 100.0, 2) if not np.isnan(FF_stack) else np.nan,
                 "PCE [mW/cm²]": round(P_mpp_stack, 2) if not np.isnan(P_mpp_stack) else np.nan, 
                 "Jmpp [mA/cm²]": round(J_mpp_stack, 2) if not np.isnan(J_mpp_stack) else np.nan, 
-                "Vmpp [V]": round(V_mpp_stack, 2) if not np.isnan(V_mpp_stack) else np.nan
+                "Vmpp [V]": round(V_mpp_stack, 3) if not np.isnan(V_mpp_stack) else np.nan
             })
             all_V_stack_steps.append(V_stack)
 
@@ -317,7 +316,7 @@ def style_table(df):
 
     return styles
 
-# Formatierungs-Dictionary für das saubere Anzeigen der gerundeten Werte
+# Formatierungs-Dictionary mit Vmpp auf 3 Nachkommastellen angepasst
 sweep_col_name = f"SweepValue ({sweep_param_display})"
 format_dict = {
     "Jsc [mA/cm²]": "{:.2f}",
@@ -437,7 +436,6 @@ if sweep_enable and len(sweep_values) > 1:
     param_header += f"# Sweep Configuration: Subcell {sweep_cell}, Parameter={sweep_param_display}, Min={sweep_min}, Max={sweep_max}, Steps={int(sweep_steps)}\n"
 param_header += "# ==========================================\n\n"
 
-# Da `df_results` nun direkt die gerundeten Werte enthält, übernimmt der Export diese Formatierung perfekt
 txt_results_content = param_header + df_results.to_csv(index=False, sep='\t')
 txt_results = txt_results_content.encode('utf-8')
 st.download_button("Download Results Table (.txt)", data=txt_results, file_name=f"{base_filename}_Results_Table.txt", mime="text/plain")
