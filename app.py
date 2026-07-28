@@ -205,6 +205,9 @@ for i in range(num_cells):
 if num_cells > 1:
     fig.add_trace(go.Scatter(x=V_stack, y=J_common, mode="lines", name="Multijunction", line=dict(color="black", width=3)))
 
+# Hier wird das x-Achsen-Limit gesetzt (-0.1 bis auto)
+fig.update_xaxes(range=[-0.1, None])
+
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
