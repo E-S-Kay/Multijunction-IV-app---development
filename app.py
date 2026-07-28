@@ -233,4 +233,4 @@ def style_table(df):
     
     if sweep_enable and len(sweep_values) > 1:
         num_steps = len(sweep_values)
-        swept_idx = sweep_cell -
+        swept_idx = sweep_cell - 1
