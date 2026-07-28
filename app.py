@@ -203,8 +203,8 @@ with st.expander("ℹ️ About & Contact", expanded=False):
 
 num_cells = st.sidebar.selectbox("Number of subcells", [1, 2, 3, 4, 5, 6], index=1)
 
-default_jph = ["30.0", "20.0", "15.0", "12.0", "10.0", "8.0"]
-default_j0 = ["1e-10", "1e-12", "1e-14", "1e-16", "1e-18", "1e-20"]
+default_jph = ["20.0", "22.0", "15.0", "12.0", "10.0", "8.0"]
+default_j0 = ["1e-18", "1e-11", "1e-14", "1e-16", "1e-18", "1e-20"]
 
 cells = []
 for i in range(num_cells):
