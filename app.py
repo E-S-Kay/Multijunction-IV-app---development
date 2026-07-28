@@ -347,16 +347,27 @@ fig.update_xaxes(range=[-0.1, max_v * 1.05])
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Download Buttons (.txt)
+# Download Options (.txt mit Header-Parametern)
 # -----------------------------
 st.markdown("### Download Options")
 base_filename = st.text_input("Base filename for export:", value="solar_simulation")
 
-# Results table
-txt_results = df_results.to_csv(index=False, sep='\t').encode('utf-8')
+# Parameter-Header für die Exportdateien generieren
+param_header = "# ==========================================\n"
+param_header += "# Simulation Input Parameters\n"
+param_header += "# ==========================================\n"
+for i, c in enumerate(cells):
+    param_header += f"# Subcell {i+1}: Jph={c['Jph']} mA/cm², J0={c['J0']} mA/cm², n={c['n']}, Rs={c['Rs']} Ω·cm², Rsh={c['Rsh']} Ω·cm², T={c['T']} K\n"
+if sweep_enable and len(sweep_values) > 1:
+    param_header += f"# Sweep Configuration: Subcell {sweep_cell}, Parameter={sweep_param}, Min={sweep_min}, Max={sweep_max}, Steps={int(sweep_steps)}\n"
+param_header += "# ==========================================\n\n"
+
+# 1. Results Table Export
+txt_results_content = param_header + df_results.to_csv(index=False, sep='\t')
+txt_results = txt_results_content.encode('utf-8')
 st.download_button("Download Results Table (.txt)", data=txt_results, file_name=f"{base_filename}_Results_Table.txt", mime="text/plain")
 
-# IV Curves
+# 2. IV Curves Export
 iv_dict = {}
 if sweep_enable and len(sweep_values) > 1:
     for step_i, val in enumerate(sweep_values):
@@ -364,32 +375,17 @@ if sweep_enable and len(sweep_values) > 1:
             iv_dict[f"V{i+1}_step{step_i+1} [V]"] = all_V_steps[step_i][i]
             iv_dict[f"J{i+1}_step{step_i+1} [mA/cm²]"] = J_common
         if num_cells > 1:
-            iv_dict[f"Vstack_step{step_i+1} [V]"] = all_V_stack_steps[step_i]
-            iv_dict[f"Jstack_step{step_i+1} [mA/cm²]"] = J_common
+            iv_dict[f"Vmultijunction_step{step_i+1} [V]"] = all_V_stack_steps[step_i]
+            iv_dict[f"Jmultijunction_step{step_i+1} [mA/cm²]"] = J_common
 else:
     for i in range(num_cells):
         iv_dict[f"V{i+1} [V]"] = all_V_steps[0][i]
         iv_dict[f"J{i+1} [mA/cm²]"] = J_common
     if num_cells > 1:
-        iv_dict["Vstack [V]"] = all_V_stack_steps[0]
-        iv_dict["Jstack [mA/cm²]"] = J_common
+        iv_dict["Vmultijunction [V]"] = all_V_stack_steps[0]
+        iv_dict["Jmultijunction [mA/cm²]"] = J_common
 
 df_iv = pd.DataFrame(iv_dict)
-txt_iv = df_iv.to_csv(index=False, sep='\t').encode('utf-8')
+txt_iv_content = param_header + df_iv.to_csv(index=False, sep='\t')
+txt_iv = txt_iv_content.encode('utf-8')
 st.download_button("Download IV Curves (.txt)", data=txt_iv, file_name=f"{base_filename}_IV_Curves.txt", mime="text/plain")
-
-# Input parameters
-input_list = []
-for i, c in enumerate(cells):
-    input_list.append({
-        "Subcell": f"{i+1}",
-        "Jph [mA/cm²]": c["Jph"],
-        "J0 [mA/cm²]": c["J0"],
-        "n": c["n"],
-        "Rs [Ω·cm²]": c["Rs"],
-        "Rsh [Ω·cm²]": c["Rsh"],
-        "T [K]": c["T"]
-    })
-df_input = pd.DataFrame(input_list)
-txt_input = df_input.to_csv(index=False, sep='\t').encode('utf-8')
-st.download_button("Download Input Parameters (.txt)", data=txt_input, file_name=f"{base_filename}_Input_Parameters.txt", mime="text/plain")
