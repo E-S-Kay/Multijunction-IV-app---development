@@ -133,16 +133,18 @@ plotly_colors = ["#636EFA", "#EF553B", "#00CC96", "#AB63FA"]
 css = ""
 for i in range(num_cells):
     color = plotly_colors[i % len(plotly_colors)]
-    bg_color = f"{color}22"  # ~13% Transparenz für gute Lesbarkeit
+    bg_color = f"{color}25"  # ~15% Transparenz für gute Lesbarkeit
     
     css += f"""
-    /* Äußeren Rahmen (BaseWeb Container) einfärben */
+    /* 1. Äußeren BaseWeb-Container einfärben & Kanten-Akzent setzen */
     div[data-testid="stSidebar"] div[data-baseweb="input"]:has(input[aria-label*="Subcell {i+1}"]) {{
         background-color: {bg_color} !important;
         border-left: 5px solid {color} !important;
+        border-radius: 4px !important;
     }}
-    /* Das innere Eingabefeld transparent machen, damit die Farbe durchscheint */
-    div[data-testid="stSidebar"] input[aria-label*="Subcell {i+1}"] {{
+    
+    /* 2. WICHTIG: Alle inneren Ebenen (*) transparent machen, damit die Farbe sichtbar wird */
+    div[data-testid="stSidebar"] div[data-baseweb="input"]:has(input[aria-label*="Subcell {i+1}"]) * {{
         background-color: transparent !important;
     }}
     """
