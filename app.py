@@ -206,10 +206,23 @@ for val in sweep_values:
 df_results = pd.DataFrame(results)
 
 # -----------------------------
-# Display Table
+# Display Table (mit farbig gestalteter 'Label'-Spalte)
 # -----------------------------
 st.write("### Results")
-st.dataframe(df_results)
+
+def style_table(df):
+    styles = pd.DataFrame("", index=df.index, columns=df.columns)
+    for idx, row in df.iterrows():
+        label = str(row["Label"])
+        for i in range(len(plotly_colors)):
+            if label == f"Subcell {i+1}":
+                styles.loc[idx, "Label"] = f"color: {plotly_colors[i]}; font-weight: bold;"
+                break
+        if label == "Multijunction":
+            styles.loc[idx, "Label"] = "font-weight: bold;"
+    return styles
+
+st.dataframe(df_results.style.apply(style_table, axis=None))
 
 # -----------------------------
 # Plot
