@@ -1,74 +1,35 @@
 import numpy as np
 import streamlit as st
-from scipy.optimize import root_scalar, fsolve
+from scipy.special import lambertw
 from scipy import stats
 import plotly.graph_objects as go
 import pandas as pd
 
 # -----------------------------
-# Helper functions
+# Fast Vectorized Lambert-W Solver
 # -----------------------------
-def safe_exp(x):
-    return np.exp(np.clip(x, -700, 700))
-
-def diode_equation_V(V, J, cell):
-    q = 1.602176634e-19
-    k = 1.380649e-23
-    arg = q * (V + J * cell["Rs"]) / (cell["n"] * k * cell["T"])
-    exp_term = safe_exp(arg)
-    return J - (cell["Jph"] - cell["J0"] * (exp_term - 1.0) - (V + J * cell["Rs"]) / cell["Rsh"])
-
-def estimate_Voc(cell):
-    try:
-        sol = root_scalar(lambda V: diode_equation_V(V, 0.0, cell),
-                          bracket=[-0.5, 2.0], method="bisect")
-        if sol.converged:
-            return sol.root
-    except Exception:
-        pass
-    return 0.6
-
-def calculate_iv(Jph_mA, J0_mA, n, Rs, Rsh, T, J_common):
-    Jph = float(Jph_mA) / 1000.0
-    J0 = float(J0_mA) / 1000.0
-    cell = {"Jph": Jph, "J0": J0, "n": float(n), "Rs": float(Rs), "Rsh": float(Rsh), "T": float(T)}
-
-    Voc = estimate_Voc(cell)
-    V_vals = np.zeros_like(J_common, dtype=float)
-    V_prev = Voc
-    for i, JmA in enumerate(J_common):
-        J = float(JmA) / 1000.0
-        V_sol = None
-        try:
-            sol = root_scalar(lambda V: diode_equation_V(V, J, cell),
-                              bracket=[-1.0, Voc + 1.5], method="bisect")
-            if sol.converged:
-                V_sol = sol.root
-        except Exception:
-            pass
-        if V_sol is None:
-            try:
-                sol = fsolve(lambda V: diode_equation_V(V, J, cell), V_prev, maxfev=1000)
-                V_sol = float(sol[0])
-            except Exception:
-                V_sol = float(V_prev)
-        V_vals[i] = V_sol
-        V_prev = V_sol
-
-    P_plot = V_vals * J_common
-    idx_mpp = int(np.nanargmax(P_plot))
-    try:
-        upper = max(1e-6, Jph_mA * 1.5)
-        sol_j = root_scalar(lambda J: diode_equation_V(0.0, J/1000.0, cell),
-                            bracket=[0.0, upper], method="bisect")
-        Jsc_val = float(sol_j.root) if sol_j.converged else np.nan
-    except Exception:
-        Jsc_val = np.nan
-
-    Vmpp = float(V_vals[idx_mpp])
-    Jmpp = float(J_common[idx_mpp])
-    Pmpp = float(P_plot[idx_mpp])
-    return V_vals, P_plot, float(Voc), Vmpp, Jmpp, Pmpp, Jsc_val
+def vector_lambertw_exp(L):
+    """Computes W(exp(L)) robustly for numpy arrays to avoid exponential overflow."""
+    L = np.asarray(L, dtype=float)
+    res = np.zeros_like(L)
+    
+    # Standard computation for safe range
+    safe_mask = L <= 700
+    if np.any(safe_mask):
+        res[safe_mask] = np.real(lambertw(np.exp(L[safe_mask])))
+        
+    # Asymptotic approximation + Halley refinement for large numbers
+    large_mask = ~safe_mask
+    if np.any(large_mask):
+        L_large = L[large_mask]
+        w = L_large - np.log(L_large)
+        for _ in range(2):
+            f = w + np.log(w) - L_large
+            f1 = (w + 1.0) / w
+            f2 = -1.0 / (w**2)
+            w -= f / (f1 - (f * f2) / (2.0 * f1))
+        res[large_mask] = w
+    return res
 
 def interpolate_Jsc_two_points_linreg(V, J):
     V = np.asarray(V, dtype=float)
@@ -116,15 +77,106 @@ def generate_shades(hex_color, num_shades):
         shades.append(f"rgb({r_new},{g_new},{b_new})")
     return shades
 
+def calculate_iv_fast(Jph_mA, J0_mA, n, Rs, Rsh, T, J_common_mA):
+    """Fully vectorized IV curve calculation using analytical Lambert W function."""
+    q = 1.602176634e-19
+    k = 1.380649e-23
+    
+    Jph = float(Jph_mA) / 1000.0  # A/cm²
+    J0 = float(J0_mA) / 1000.0    # A/cm²
+    Rs = float(Rs)                # Ω·cm²
+    Rsh = float(Rsh)              # Ω·cm²
+    n = float(n)
+    T = float(T)
+    
+    Vt = n * k * T / q
+    J = J_common_mA / 1000.0      # A/cm²
+    
+    term_j = Rsh * (Jph + J0 - J)
+    log_arg = np.log(Rsh * J0 / Vt) + term_j / Vt
+    W = vector_lambertw_exp(log_arg)
+    
+    V_vals = term_j - J * Rs - Vt * W
+    P_plot = V_vals * J_common_mA
+    
+    idx_mpp = int(np.nanargmax(P_plot))
+    Voc = float(V_vals[0])
+    Vmpp = float(V_vals[idx_mpp])
+    Jmpp = float(J_common_mA[idx_mpp])
+    Pmpp = float(P_plot[idx_mpp])
+    
+    Jsc_val = interpolate_Jsc_two_points_linreg(V_vals, J_common_mA)
+    
+    return V_vals, P_plot, Voc, Vmpp, Jmpp, Pmpp, Jsc_val
+
 # -----------------------------
-# Dynamic Color Palette (6 Colors for Subcells)
+# Cached Simulation Engine
+# -----------------------------
+@st.cache_data
+def run_simulation(cells, sweep_enable, sweep_cell, sweep_param, sweep_values):
+    max_jph = max([c["Jph"] for c in cells])
+    J_common = np.linspace(0.0, max_jph, 800)
+
+    results = []
+    all_V_steps = []
+    all_V_stack_steps = []
+
+    for val in sweep_values:
+        cells_current = [c.copy() for c in cells]
+        if val is not None:
+            cells_current[sweep_cell-1][sweep_param] = val
+        
+        V_all, P_all, rows = [], [], []
+        for i, c in enumerate(cells_current):
+            V, P, Voc, Vmpp, Jmpp, Pmpp, Jsc = calculate_iv_fast(
+                c["Jph"], c["J0"], c["n"], c["Rs"], c["Rsh"], c["T"], J_common
+            )
+            V_all.append(V)
+            P_all.append(P)
+            FF = calc_FF(Jsc, Voc, Jmpp, Vmpp)
+            rows.append({
+                "Label": f"Subcell {i+1}",
+                "Jsc": Jsc, "Voc": Voc, "FF": FF,
+                "PCE": Pmpp, "Jmpp": Jmpp, "Vmpp": Vmpp
+            })
+        
+        all_V_steps.append(V_all)
+        
+        if len(cells) > 1:
+            V_stack = np.sum(np.vstack(V_all), axis=0)
+            P_stack = V_stack * J_common
+            idx_mpp_stack = int(np.nanargmax(P_stack))
+            Voc_stack = float(V_stack[0])
+            V_mpp_stack = float(V_stack[idx_mpp_stack])
+            J_mpp_stack = float(J_common[idx_mpp_stack])
+            P_mpp_stack = float(P_stack[idx_mpp_stack])
+            Jsc_stack = interpolate_Jsc_two_points_linreg(V_stack, J_common)
+            FF_stack = calc_FF(Jsc_stack, Voc_stack, J_mpp_stack, V_mpp_stack)
+            rows.append({
+                "Label": "Multijunction",
+                "Jsc": Jsc_stack, "Voc": Voc_stack, "FF": FF_stack,
+                "PCE": P_mpp_stack, "Jmpp": J_mpp_stack, "Vmpp": V_mpp_stack
+            })
+            all_V_stack_steps.append(V_stack)
+
+        for r in rows:
+            r_copy = r.copy()
+            if sweep_enable:
+                r_copy["SweepValue"] = val
+            results.append(r_copy)
+
+    df_results = pd.DataFrame(results)
+    return df_results, all_V_steps, all_V_stack_steps, J_common
+
+# -----------------------------
+# Dynamic Color Palette
 # -----------------------------
 plotly_colors = ["#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A", "#19D3F3"]
 
 # -----------------------------
 # Streamlit UI
 # -----------------------------
-st.set_page_config(page_title="Multijunction IV Simulator", layout="centered")
+st.set_page_config(page_title="Multijunction IV Simulator", layout="wide")
 st.title("Multijunction Solar Cell IV Simulator with Sweep")
 
 # Info & Credits Expander
@@ -153,7 +205,6 @@ cells = []
 for i in range(num_cells):
     color = plotly_colors[i % len(plotly_colors)]
     
-    # Label with colored background and black text
     st.sidebar.markdown(
         f"""
         <div style="background-color: {color}; padding: 8px 12px; border-radius: 8px; margin-top: 15px; margin-bottom: 10px; color: #000000; font-weight: bold; font-size: 16px;">
@@ -186,65 +237,21 @@ if sweep_enable:
     sweep_min = st.sidebar.number_input("Min value", value=float(cells[sweep_cell-1][sweep_param]))
     sweep_max = st.sidebar.number_input("Max value", value=float(cells[sweep_cell-1][sweep_param]))
     sweep_steps = st.sidebar.number_input("Number of steps", value=5, min_value=2)
-    sweep_values = np.linspace(sweep_min, sweep_max, int(sweep_steps))
+    sweep_values = list(np.linspace(sweep_min, sweep_max, int(sweep_steps)))
 else:
+    sweep_cell = 1
+    sweep_param = "Jph"
     sweep_values = [None]
 
 # -----------------------------
-# Simulation
+# Run Simulation
 # -----------------------------
-J_common = np.linspace(0.0, max([c["Jph"] for c in cells]), 800)
-
-results = []
-all_V_steps = []
-all_V_stack_steps = []
-
-for val in sweep_values:
-    cells_current = [c.copy() for c in cells]
-    if val is not None:
-        cells_current[sweep_cell-1][sweep_param] = val
-    
-    V_all, P_all, rows = [], [], []
-    for i, c in enumerate(cells_current):
-        V, P, Voc, Vmpp, Jmpp, Pmpp, Jsc = calculate_iv(c["Jph"], c["J0"], c["n"], c["Rs"], c["Rsh"], c["T"], J_common)
-        V_all.append(V)
-        P_all.append(P)
-        FF = calc_FF(Jsc, Voc, Jmpp, Vmpp)
-        rows.append({
-            "Label": f"Subcell {i+1}",
-            "Jsc": Jsc, "Voc": Voc, "FF": FF,
-            "PCE": Pmpp, "Jmpp": Jmpp, "Vmpp": Vmpp
-        })
-    
-    all_V_steps.append(V_all)
-    
-    if num_cells > 1:
-        V_stack = np.sum(np.vstack(V_all), axis=0)
-        P_stack = V_stack * J_common
-        idx_mpp_stack = int(np.nanargmax(P_stack))
-        Voc_stack = float(V_stack[0])
-        V_mpp_stack = float(V_stack[idx_mpp_stack])
-        J_mpp_stack = float(J_common[idx_mpp_stack])
-        P_mpp_stack = float(P_stack[idx_mpp_stack])
-        Jsc_stack = interpolate_Jsc_two_points_linreg(V_stack, J_common)
-        FF_stack = calc_FF(Jsc_stack, Voc_stack, J_mpp_stack, V_mpp_stack)
-        rows.append({
-            "Label": "Multijunction",
-            "Jsc": Jsc_stack, "Voc": Voc_stack, "FF": FF_stack,
-            "PCE": P_mpp_stack, "Jmpp": J_mpp_stack, "Vmpp": V_mpp_stack
-        })
-        all_V_stack_steps.append(V_stack)
-
-    for r in rows:
-        r_copy = r.copy()
-        if sweep_enable:
-            r_copy["SweepValue"] = val
-        results.append(r_copy)
-
-df_results = pd.DataFrame(results)
+df_results, all_V_steps, all_V_stack_steps, J_common = run_simulation(
+    cells, sweep_enable, sweep_cell, sweep_param, sweep_values
+)
 
 # -----------------------------
-# Display Table (with dynamic shades for sweeps)
+# Display Table
 # -----------------------------
 st.write("### Results")
 
@@ -287,7 +294,12 @@ def style_table(df):
 
     return styles
 
-st.dataframe(df_results.style.apply(style_table, axis=None))
+# Numerical columns rounded to 3 decimal places for cleaner table UI
+df_results_display = df_results.copy()
+num_cols = [c for c in ["Jsc", "Voc", "FF", "PCE", "Jmpp", "Vmpp", "SweepValue"] if c in df_results_display.columns]
+df_results_display[num_cols] = df_results_display[num_cols].round(3)
+
+st.dataframe(df_results_display.style.apply(style_table, axis=None), use_container_width=True)
 
 # -----------------------------
 # Plot
@@ -349,11 +361,9 @@ else:
             line=dict(color="black", width=3)
         ))
 
-# Zero reference lines
 fig.add_vline(x=0, line_width=1, line_dash="dash", line_color="gray")
 fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="gray")
 
-# Dynamically calculate upper bound for X-axis
 max_v = 0.0
 for V_step in all_V_steps:
     for v_arr in V_step:
@@ -362,17 +372,22 @@ if num_cells > 1:
     for v_st in all_V_stack_steps:
         max_v = max(max_v, np.nanmax(v_st))
 
+fig.update_layout(
+    xaxis_title="Voltage V [V]",
+    yaxis_title="Current Density J [mA/cm²]",
+    template="plotly_white",
+    margin=dict(l=20, r=20, t=30, b=20)
+)
 fig.update_xaxes(range=[-0.1, max_v * 1.05])
 
 st.plotly_chart(fig, use_container_width=True)
 
 # -----------------------------
-# Download Options (.txt with header parameters)
+# Download Options
 # -----------------------------
 st.markdown("### Download Options")
 base_filename = st.text_input("Base filename for export:", value="solar_simulation")
 
-# Generate metadata header
 param_header = "# ==========================================\n"
 param_header += "# Simulation Input Parameters\n"
 param_header += "# Developed by: Eike Köhnen (Helmholtz-Zentrum Berlin)\n"
@@ -384,12 +399,10 @@ if sweep_enable and len(sweep_values) > 1:
     param_header += f"# Sweep Configuration: Subcell {sweep_cell}, Parameter={sweep_param}, Min={sweep_min}, Max={sweep_max}, Steps={int(sweep_steps)}\n"
 param_header += "# ==========================================\n\n"
 
-# 1. Results Table Export
 txt_results_content = param_header + df_results.to_csv(index=False, sep='\t')
 txt_results = txt_results_content.encode('utf-8')
 st.download_button("Download Results Table (.txt)", data=txt_results, file_name=f"{base_filename}_Results_Table.txt", mime="text/plain")
 
-# 2. IV Curves Export
 iv_dict = {}
 if sweep_enable and len(sweep_values) > 1:
     for step_i, val in enumerate(sweep_values):
