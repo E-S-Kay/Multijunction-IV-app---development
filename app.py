@@ -119,32 +119,21 @@ st.title("Multijunction Solar Cell IV Simulator with Sweep")
 
 num_cells = st.sidebar.selectbox("Number of subcells", [1, 2, 3, 4, 5, 6], index=1)
 
-# Dynamic CSS Styling für die Sidebar-Eingabefelder
-css = ""
-for i in range(num_cells):
-    color = plotly_colors[i % len(plotly_colors)]
-    bg_color = f"{color}25"  # ~15% Transparenz
-    
-    css += f"""
-    div[data-testid="stSidebar"] div[data-baseweb="input"]:has(input[aria-label*="Subcell {i+1}"]) {{
-        background-color: {bg_color} !important;
-        border-left: 5px solid {color} !important;
-        border-radius: 4px !important;
-    }}
-    div[data-testid="stSidebar"] div[data-baseweb="input"]:has(input[aria-label*="Subcell {i+1}"]) * {{
-        background-color: transparent !important;
-    }}
-    """
-
-st.markdown(f"<style>{css}</style>", unsafe_allow_html=True)
-
 # Standardwerte für bis zu 6 Subzellen
 default_jph = ["30.0", "20.0", "15.0", "12.0", "10.0", "8.0"]
 default_j0 = ["1e-10", "1e-12", "1e-14", "1e-16", "1e-18", "1e-20"]
 
 cells = []
 for i in range(num_cells):
-    st.sidebar.markdown(f"### Subcell {i+1}")
+    color = plotly_colors[i % len(plotly_colors)]
+    
+    # Überschrift im exakten Plotly-Farbton mit farbigem Unterstrich
+    st.sidebar.markdown(
+        f"<h3 style='color: {color}; border-bottom: 2px solid {color}; padding-bottom: 4px; margin-top: 15px;'>"
+        f"Subcell {i+1}</h3>", 
+        unsafe_allow_html=True
+    )
+
     jph_def = default_jph[i] if i < len(default_jph) else "10.0"
     j0_def = default_j0[i] if i < len(default_j0) else "1e-12"
 
@@ -232,7 +221,7 @@ for i in range(num_cells):
         y=J_common,
         mode="lines",
         name=f"Subcell {i+1}",
-        line=dict(color=plotly_colors[i % len(plotly_colors)])  # Gleiche Farbe wie in der Sidebar
+        line=dict(color=plotly_colors[i % len(plotly_colors)])
     ))
 
 if num_cells > 1:
