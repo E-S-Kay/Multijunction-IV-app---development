@@ -113,7 +113,7 @@ def calculate_iv_fast(Jph_mA, J0_mA, n, Rs, Rsh, T, J_common_mA):
 # Cached Simulation Engine
 # -----------------------------
 @st.cache_data
-def run_simulation(cells, sweep_enable, sweep_cell, sweep_param, sweep_values):
+def run_simulation(cells, sweep_enable, sweep_cell, sweep_param_key, sweep_values):
     max_jph = max([c["Jph"] for c in cells])
     J_common = np.linspace(0.0, max_jph, 800)
 
@@ -124,7 +124,7 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param, sweep_values):
     for val in sweep_values:
         cells_current = [c.copy() for c in cells]
         if val is not None:
-            cells_current[sweep_cell-1][sweep_param] = val
+            cells_current[sweep_cell-1][sweep_param_key] = val
         
         V_all, P_all, rows = [], [], []
         for i, c in enumerate(cells_current):
@@ -136,8 +136,8 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param, sweep_values):
             FF = calc_FF(Jsc, Voc, Jmpp, Vmpp)
             rows.append({
                 "Label": f"Subcell {i+1}",
-                "Jsc": Jsc, "Voc": Voc, "FF": FF,
-                "PCE": Pmpp, "Jmpp": Jmpp, "Vmpp": Vmpp
+                "Jsc [mA/cm²]": Jsc, "Voc [V]": Voc, "FF": FF,
+                "PCE [mW/cm²]": Pmpp, "Jmpp [mA/cm²]": Jmpp, "Vmpp [V]": Vmpp
             })
         
         all_V_steps.append(V_all)
@@ -154,8 +154,8 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param, sweep_values):
             FF_stack = calc_FF(Jsc_stack, Voc_stack, J_mpp_stack, V_mpp_stack)
             rows.append({
                 "Label": "Multijunction",
-                "Jsc": Jsc_stack, "Voc": Voc_stack, "FF": FF_stack,
-                "PCE": P_mpp_stack, "Jmpp": J_mpp_stack, "Vmpp": V_mpp_stack
+                "Jsc [mA/cm²]": Jsc_stack, "Voc [V]": Voc_stack, "FF": FF_stack,
+                "PCE [mW/cm²]": P_mpp_stack, "Jmpp [mA/cm²]": J_mpp_stack, "Vmpp [V]": V_mpp_stack
             })
             all_V_stack_steps.append(V_stack)
 
@@ -171,7 +171,7 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param, sweep_values):
 # -----------------------------
 # Dynamic Color Palette
 # -----------------------------
-plotly_colors = ["#118ab2", "#ef476f", "#06d6a0", "#f78c6b", "#ffd166", "#073b4c"]
+plotly_colors = ["#87CEEB", "#FF7F50", "#98FF98", "#FFDAB9", "#FFD700", "E6E6FA"]
 
 # -----------------------------
 # Streamlit UI
@@ -231,24 +231,43 @@ for i in range(num_cells):
 st.sidebar.markdown("## Parameter Sweep")
 sweep_enable = st.sidebar.checkbox("Enable Sweep", value=False)
 
+# Mapping dictionary for parameters, labels and units
+param_options = {
+    "Jph": {"label": "Jph [mA/cm²]", "key": "Jph"},
+    "J0": {"label": "J0 [mA/cm²]", "key": "J0"},
+    "n": {"label": "Ideality factor n [-]", "key": "n"},
+    "Rs": {"label": "Rs [Ω·cm²]", "key": "Rs"},
+    "Rsh": {"label": "Rsh [Ω·cm²]", "key": "Rsh"},
+    "T": {"label": "Temperature T [K]", "key": "T"}
+}
+
 if sweep_enable:
     sweep_cell = st.sidebar.selectbox("Select Subcell to sweep", list(range(1, num_cells+1)))
-    sweep_param = st.sidebar.selectbox("Parameter to sweep", ["Jph", "J0", "n", "Rs", "Rsh", "T"])
-    sweep_min = st.sidebar.number_input("Min value", value=float(cells[sweep_cell-1][sweep_param]))
-    sweep_max = st.sidebar.number_input("Max value", value=float(cells[sweep_cell-1][sweep_param]))
+    
+    selected_param_label = st.sidebar.selectbox("Parameter to sweep", list(param_options.keys()), format_func=lambda x: param_options[x]["label"])
+    sweep_param_key = param_options[selected_param_label]["key"]
+    sweep_param_display = param_options[selected_param_label]["label"]
+    
+    sweep_min = st.sidebar.number_input("Min value", value=float(cells[sweep_cell-1][sweep_param_key]))
+    sweep_max = st.sidebar.number_input("Max value", value=float(cells[sweep_cell-1][sweep_param_key]))
     sweep_steps = st.sidebar.number_input("Number of steps", value=5, min_value=2)
     sweep_values = list(np.linspace(sweep_min, sweep_max, int(sweep_steps)))
 else:
     sweep_cell = 1
-    sweep_param = "Jph"
+    sweep_param_key = "Jph"
+    sweep_param_display = "Jph [mA/cm²]"
     sweep_values = [None]
 
 # -----------------------------
 # Run Simulation
 # -----------------------------
 df_results, all_V_steps, all_V_stack_steps, J_common = run_simulation(
-    cells, sweep_enable, sweep_cell, sweep_param, sweep_values
+    cells, sweep_enable, sweep_cell, sweep_param_key, sweep_values
 )
+
+# Rename SweepValue column in results if enabled to include units
+if sweep_enable and "SweepValue" in df_results.columns:
+    df_results = df_results.rename(columns={"SweepValue": f"SweepValue ({sweep_param_display})"})
 
 # -----------------------------
 # Display Table
@@ -296,7 +315,7 @@ def style_table(df):
 
 # Numerical columns rounded to 3 decimal places for cleaner table UI
 df_results_display = df_results.copy()
-num_cols = [c for c in ["Jsc", "Voc", "FF", "PCE", "Jmpp", "Vmpp", "SweepValue"] if c in df_results_display.columns]
+num_cols = [c for c in df_results_display.columns if c != "Label"]
 df_results_display[num_cols] = df_results_display[num_cols].round(3)
 
 st.dataframe(df_results_display.style.apply(style_table, axis=None), use_container_width=True)
@@ -320,7 +339,7 @@ if sweep_enable and len(sweep_values) > 1:
                     x=all_V_steps[step_i][i],
                     y=J_common,
                     mode="lines",
-                    name=f"Subcell {i+1} ({sweep_param}={val:.2g})",
+                    name=f"Subcell {i+1} ({sweep_param_display}={val:.2g})",
                     line=dict(color=swept_shades[step_i])
                 ))
         else:
@@ -338,7 +357,7 @@ if sweep_enable and len(sweep_values) > 1:
                 x=all_V_stack_steps[step_i],
                 y=J_common,
                 mode="lines",
-                name=f"Multijunction ({sweep_param}={val:.2g})",
+                name=f"Multijunction ({sweep_param_display}={val:.2g})",
                 line=dict(color=stack_shades[step_i], width=2)
             ))
 
@@ -377,7 +396,7 @@ fig.update_layout(
     yaxis_title="Current Density J [mA/cm²]",
     template="plotly_white",
     margin=dict(l=20, r=20, t=30, b=20),
-    height=500,  # Hier wird die Höhe in Pixeln festgelegt
+    height=500,
 )
 fig.update_xaxes(range=[-0.1, max_v * 1.05])
 
@@ -397,7 +416,7 @@ param_header += "# ==========================================\n"
 for i, c in enumerate(cells):
     param_header += f"# Subcell {i+1}: Jph={c['Jph']} mA/cm², J0={c['J0']} mA/cm², n={c['n']}, Rs={c['Rs']} Ω·cm², Rsh={c['Rsh']} Ω·cm², T={c['T']} K\n"
 if sweep_enable and len(sweep_values) > 1:
-    param_header += f"# Sweep Configuration: Subcell {sweep_cell}, Parameter={sweep_param}, Min={sweep_min}, Max={sweep_max}, Steps={int(sweep_steps)}\n"
+    param_header += f"# Sweep Configuration: Subcell {sweep_cell}, Parameter={sweep_param_display}, Min={sweep_min}, Max={sweep_max}, Steps={int(sweep_steps)}\n"
 param_header += "# ==========================================\n\n"
 
 txt_results_content = param_header + df_results.to_csv(index=False, sep='\t')
@@ -407,7 +426,7 @@ st.download_button("Download Results Table (.txt)", data=txt_results, file_name=
 iv_dict = {}
 if sweep_enable and len(sweep_values) > 1:
     for step_i, val in enumerate(sweep_values):
-        val_str = f"{sweep_param}={val:.2g}"
+        val_str = f"{sweep_param_display}={val:.2g}"
         for i in range(num_cells):
             iv_dict[f"V{i+1} ({val_str}) [V]"] = all_V_steps[step_i][i]
             iv_dict[f"J{i+1} ({val_str}) [mA/cm²]"] = J_common
