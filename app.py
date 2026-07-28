@@ -171,7 +171,7 @@ def run_simulation(cells, sweep_enable, sweep_cell, sweep_param, sweep_values):
 # -----------------------------
 # Dynamic Color Palette
 # -----------------------------
-plotly_colors = ["#636EFA", "#EF553B", "#00CC96", "#AB63FA", "#FFA15A", "#19D3F3"]
+plotly_colors = ["#ef476f", "#06d6a0", "#073b4c", "#f78c6b", "#118ab2", "#ffd166"]
 
 # -----------------------------
 # Streamlit UI
