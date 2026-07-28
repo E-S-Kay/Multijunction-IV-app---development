@@ -137,10 +137,13 @@ cells = []
 for i in range(num_cells):
     color = plotly_colors[i % len(plotly_colors)]
     
-    # Überschrift im exakten Plotly-Farbton mit farbigem Unterstrich
+    # Label mit farbigem Hintergrund und schwarzem Text
     st.sidebar.markdown(
-        f"<h3 style='color: {color}; border-bottom: 2px solid {color}; padding-bottom: 4px; margin-top: 15px;'>"
-        f"Subcell {i+1}</h3>", 
+        f"""
+        <div style="background-color: {color}; padding: 8px 12px; border-radius: 8px; margin-top: 15px; margin-bottom: 10px; color: #000000; font-weight: bold; font-size: 16px;">
+            Subcell {i+1}
+        </div>
+        """, 
         unsafe_allow_html=True
     )
 
