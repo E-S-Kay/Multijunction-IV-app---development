@@ -128,22 +128,22 @@ for i in range(num_cells):
 # -----------------------------
 # Dynamic Styling for Sidebar Inputs (Matching Plotly Colors)
 # -----------------------------
-# Plotly Standard-Farben für Traces
 plotly_colors = ["#636EFA", "#EF553B", "#00CC96", "#AB63FA"]
 
 css = ""
 for i in range(num_cells):
     color = plotly_colors[i % len(plotly_colors)]
-    # 22 am Ende erzeugt eine leicht transparente Hintergrundfarbe (13% Deckkraft),
-    # damit der eingegebene Text gut lesbar bleibt.
-    bg_color = f"{color}22" 
+    bg_color = f"{color}22"  # ~13% Transparenz für gute Lesbarkeit
     
     css += f"""
-    /* Hintergrundfarbe & linker Farbakzent für Eingabefelder von Subcell {i+1} */
-    div[data-testid="stSidebar"] input[aria-label*="Subcell {i+1}"] {{
+    /* Äußeren Rahmen (BaseWeb Container) einfärben */
+    div[data-testid="stSidebar"] div[data-baseweb="input"]:has(input[aria-label*="Subcell {i+1}"]) {{
         background-color: {bg_color} !important;
         border-left: 5px solid {color} !important;
-        color: inherit !important;
+    }}
+    /* Das innere Eingabefeld transparent machen, damit die Farbe durchscheint */
+    div[data-testid="stSidebar"] input[aria-label*="Subcell {i+1}"] {{
+        background-color: transparent !important;
     }}
     """
 
