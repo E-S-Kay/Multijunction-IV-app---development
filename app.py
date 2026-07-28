@@ -117,12 +117,33 @@ num_cells = st.sidebar.selectbox("Number of subcells", [1,2,3,4], index=1)
 cells = []
 for i in range(num_cells):
     st.sidebar.markdown(f"### Subcell {i+1}")
-    Jph = to_float(st.sidebar.text_input(f"Subcell {i+1}: Jph [mA/cm²]", "30.0" if i==0 else "20.0", key=f"Jph{i}"))
-    J0 = to_float(st.sidebar.text_input(f"Subcell {i+1}: J0 [mA/cm²]", "1e-10" if i==0 else "1e-12", key=f"J0{i}"))
-    n = to_float(st.sidebar.text_input(f"Subcell {i+1}: Ideality factor n", "1.0", key=f"n{i}"))
-    Rs = to_float(st.sidebar.text_input(f"Subcell {i+1}: Rs [Ω·cm²]", "0.2", key=f"Rs{i}"))
-    Rsh = to_float(st.sidebar.text_input(f"Subcell {i+1}: Rsh [Ω·cm²]", "1000.0", key=f"Rsh{i}"))
-    T = to_float(st.sidebar.text_input(f"Subcell {i+1}: Temperature T [K]", "298.0", key=f"T{i}"))
+    
+    # Beispiel mit st.slider (Slider + Klick auf die Zahl für Texteingabe)
+    Jph = st.sidebar.slider(
+        f"Subcell {i+1}: Jph [mA/cm²]", 
+        min_value=0.0, 
+        max_value=100.0, 
+        value=30.0 if i==0 else 20.0, 
+        step=0.1,
+        key=f"Jph{i}"
+    )
+    
+    # Beispiel mit st.number_input (Zahlenfeld mit Eingabe und +/- Buttons)
+    # Bei J0 arbeiten wir mit sehr kleinen Zahlen, hier ist number_input mit "format" ideal.
+    J0 = st.sidebar.number_input(
+        f"Subcell {i+1}: J0 [mA/cm²]", 
+        min_value=0.0, 
+        max_value=1.0, 
+        value=1e-10 if i==0 else 1e-12, 
+        format="%.12f", # Erlaubt wissenschaftliche oder sehr kleine Werte
+        key=f"J0{i}"
+    )
+    
+    n = st.sidebar.slider(f"Subcell {i+1}: Ideality factor n", 0.5, 3.0, 1.0, 0.1, key=f"n{i}")
+    Rs = st.sidebar.number_input(f"Subcell {i+1}: Rs [Ω·cm²]", 0.0, 10.0, 0.2, 0.1, key=f"Rs{i}")
+    Rsh = st.sidebar.number_input(f"Subcell {i+1}: Rsh [Ω·cm²]", 10.0, 10000.0, 1000.0, 10.0, key=f"Rsh{i}")
+    T = st.sidebar.slider(f"Subcell {i+1}: Temperature T [K]", 200.0, 400.0, 298.0, 1.0, key=f"T{i}")
+    
     cells.append({"Jph": Jph, "J0": J0, "n": n, "Rs": Rs, "Rsh": Rsh, "T": T})
 
 # -----------------------------
