@@ -218,7 +218,8 @@ for val in sweep_values:
 
     for r in rows:
         r_copy = r.copy()
-        r_copy["SweepValue"] = val if val is not None else np.nan
+        if sweep_enable:
+            r_copy["SweepValue"] = val
         results.append(r_copy)
 
 df_results = pd.DataFrame(results)
