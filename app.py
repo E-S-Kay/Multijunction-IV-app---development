@@ -101,10 +101,20 @@ def to_float(text, default=0.0):
     except Exception:
         return float(default)
 
-def fmt(x, dec=2):
-    if x is None or (isinstance(x, float) and np.isnan(x)):
-        return "NaN"
-    return f"{x:.{dec}f}"
+def generate_shades(hex_color, num_shades):
+    """Generiert Nuancen von hell nach dunkel für eine Hex-Farbe."""
+    if num_shades <= 1:
+        return [hex_color]
+    hex_color = hex_color.lstrip('#')
+    r, g, b = tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+    shades = []
+    for i in range(num_shades):
+        factor = 0.35 + 0.65 * (i / (num_shades - 1))
+        r_new = int(r * factor + 255 * (1 - factor))
+        g_new = int(g * factor + 255 * (1 - factor))
+        b_new = int(b * factor + 255 * (1 - factor))
+        shades.append(f"rgb({r_new},{g_new},{b_new})")
+    return shades
 
 # -----------------------------
 # Dynamic Color Palette (6 Colors for Subcells)
@@ -167,13 +177,16 @@ else:
 J_common = np.linspace(0.0, max([c["Jph"] for c in cells]), 800)
 
 results = []
+all_V_steps = []
+all_V_stack_steps = []
 
 for val in sweep_values:
+    cells_current = [c.copy() for c in cells]
     if val is not None:
-        cells[sweep_cell-1][sweep_param] = val
+        cells_current[sweep_cell-1][sweep_param] = val
     
     V_all, P_all, rows = [], [], []
-    for i, c in enumerate(cells):
+    for i, c in enumerate(cells_current):
         V, P, Voc, Vmpp, Jmpp, Pmpp, Jsc = calculate_iv(c["Jph"], c["J0"], c["n"], c["Rs"], c["Rsh"], c["T"], J_common)
         V_all.append(V)
         P_all.append(P)
@@ -183,6 +196,9 @@ for val in sweep_values:
             "Jsc": Jsc, "Voc": Voc, "FF": FF,
             "PCE": Pmpp, "Jmpp": Jmpp, "Vmpp": Vmpp
         })
+    
+    all_V_steps.append(V_all)
+    
     if num_cells > 1:
         V_stack = np.sum(np.vstack(V_all), axis=0)
         P_stack = V_stack * J_common
@@ -198,6 +214,8 @@ for val in sweep_values:
             "Jsc": Jsc_stack, "Voc": Voc_stack, "FF": FF_stack,
             "PCE": P_mpp_stack, "Jmpp": J_mpp_stack, "Vmpp": V_mpp_stack
         })
+        all_V_stack_steps.append(V_stack)
+
     for r in rows:
         r_copy = r.copy()
         r_copy["SweepValue"] = val if val is not None else np.nan
@@ -228,34 +246,75 @@ st.dataframe(df_results.style.apply(style_table, axis=None))
 # Plot
 # -----------------------------
 fig = go.Figure()
-for i in range(num_cells):
-    fig.add_trace(go.Scatter(
-        x=V_all[i],
-        y=J_common,
-        mode="lines",
-        name=f"Subcell {i+1}",
-        line=dict(color=plotly_colors[i % len(plotly_colors)])
-    ))
 
-if num_cells > 1:
-    fig.add_trace(go.Scatter(
-        x=V_stack,
-        y=J_common,
-        mode="lines",
-        name="Multijunction",
-        line=dict(color="black", width=3)
-    ))
+if sweep_enable and len(sweep_values) > 1:
+    num_steps = len(sweep_values)
+    swept_idx = sweep_cell - 1
+    swept_base_color = plotly_colors[swept_idx % len(plotly_colors)]
+    swept_shades = generate_shades(swept_base_color, num_steps)
+    stack_shades = generate_shades("#000000", num_steps)
+
+    for i in range(num_cells):
+        if i == swept_idx:
+            for step_i, val in enumerate(sweep_values):
+                fig.add_trace(go.Scatter(
+                    x=all_V_steps[step_i][i],
+                    y=J_common,
+                    mode="lines",
+                    name=f"Subcell {i+1} ({sweep_param}={val:.2g})",
+                    line=dict(color=swept_shades[step_i])
+                ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=all_V_steps[0][i],
+                y=J_common,
+                mode="lines",
+                name=f"Subcell {i+1}",
+                line=dict(color=plotly_colors[i % len(plotly_colors)])
+            ))
+
+    if num_cells > 1:
+        for step_i, val in enumerate(sweep_values):
+            fig.add_trace(go.Scatter(
+                x=all_V_stack_steps[step_i],
+                y=J_common,
+                mode="lines",
+                name=f"Multijunction ({sweep_param}={val:.2g})",
+                line=dict(color=stack_shades[step_i], width=2)
+            ))
+
+else:
+    for i in range(num_cells):
+        fig.add_trace(go.Scatter(
+            x=all_V_steps[0][i],
+            y=J_common,
+            mode="lines",
+            name=f"Subcell {i+1}",
+            line=dict(color=plotly_colors[i % len(plotly_colors)])
+        ))
+
+    if num_cells > 1:
+        fig.add_trace(go.Scatter(
+            x=all_V_stack_steps[0],
+            y=J_common,
+            mode="lines",
+            name="Multijunction",
+            line=dict(color="black", width=3)
+        ))
 
 # Vertikale Linie bei X=0 und horizontale Linie bei Y=0
 fig.add_vline(x=0, line_width=1, line_dash="dash", line_color="gray")
 fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="gray")
 
-# Maximalen x-Wert dynamisch aus den Daten berechnen
-max_v = max([np.nanmax(v) for v in V_all])
+# Maximalen x-Wert dynamisch aus allen Daten berechnen
+max_v = 0.0
+for V_step in all_V_steps:
+    for v_arr in V_step:
+        max_v = max(max_v, np.nanmax(v_arr))
 if num_cells > 1:
-    max_v = max(max_v, np.nanmax(V_stack))
+    for v_st in all_V_stack_steps:
+        max_v = max(max_v, np.nanmax(v_st))
 
-# x-Achse bei -0.1 starten lassen, x_max dynamisch setzen
 fig.update_xaxes(range=[-0.1, max_v * 1.05])
 
 st.plotly_chart(fig, use_container_width=True)
@@ -272,12 +331,22 @@ st.download_button("Download Results Table (.txt)", data=txt_results, file_name=
 
 # IV Curves
 iv_dict = {}
-for i in range(num_cells):
-    iv_dict[f"V{i+1} [V]"] = V_all[i]
-    iv_dict[f"J{i+1} [mA/cm²]"] = J_common
-if num_cells > 1:
-    iv_dict["Vstack [V]"] = V_stack
-    iv_dict["Jstack [mA/cm²]"] = J_common
+if sweep_enable and len(sweep_values) > 1:
+    for step_i, val in enumerate(sweep_values):
+        for i in range(num_cells):
+            iv_dict[f"V{i+1}_step{step_i+1} [V]"] = all_V_steps[step_i][i]
+            iv_dict[f"J{i+1}_step{step_i+1} [mA/cm²]"] = J_common
+        if num_cells > 1:
+            iv_dict[f"Vstack_step{step_i+1} [V]"] = all_V_stack_steps[step_i]
+            iv_dict[f"Jstack_step{step_i+1} [mA/cm²]"] = J_common
+else:
+    for i in range(num_cells):
+        iv_dict[f"V{i+1} [V]"] = all_V_steps[0][i]
+        iv_dict[f"J{i+1} [mA/cm²]"] = J_common
+    if num_cells > 1:
+        iv_dict["Vstack [V]"] = all_V_stack_steps[0]
+        iv_dict["Jstack [mA/cm²]"] = J_common
+
 df_iv = pd.DataFrame(iv_dict)
 txt_iv = df_iv.to_csv(index=False, sep='\t').encode('utf-8')
 st.download_button("Download IV Curves (.txt)", data=txt_iv, file_name=f"{base_filename}_IV_Curves.txt", mime="text/plain")
