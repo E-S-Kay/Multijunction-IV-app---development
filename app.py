@@ -234,3 +234,162 @@ def style_table(df):
     if sweep_enable and len(sweep_values) > 1:
         num_steps = len(sweep_values)
         swept_idx = sweep_cell - 1
+        swept_base_color = plotly_colors[swept_idx % len(plotly_colors)]
+        swept_shades = generate_shades(swept_base_color, num_steps)
+        stack_shades = generate_shades("#000000", num_steps)
+        rows_per_step = num_cells + (1 if num_cells > 1 else 0)
+
+        for idx, row in df.iterrows():
+            label = str(row["Label"])
+            step_i = min(idx // rows_per_step, num_steps - 1)
+            
+            for i in range(num_cells):
+                if label == f"Subcell {i+1}":
+                    if i == swept_idx:
+                        c = swept_shades[step_i]
+                    else:
+                        c = plotly_colors[i % len(plotly_colors)]
+                    styles.loc[idx, "Label"] = f"color: {c}; font-weight: bold;"
+                    break
+            
+            if label == "Multijunction":
+                c = stack_shades[step_i]
+                styles.loc[idx, "Label"] = f"color: {c}; font-weight: bold;"
+    else:
+        for idx, row in df.iterrows():
+            label = str(row["Label"])
+            for i in range(len(plotly_colors)):
+                if label == f"Subcell {i+1}":
+                    styles.loc[idx, "Label"] = f"color: {plotly_colors[i]}; font-weight: bold;"
+                    break
+            if label == "Multijunction":
+                styles.loc[idx, "Label"] = "color: #000000; font-weight: bold;"
+
+    return styles
+
+st.dataframe(df_results.style.apply(style_table, axis=None))
+
+# -----------------------------
+# Plot
+# -----------------------------
+fig = go.Figure()
+
+if sweep_enable and len(sweep_values) > 1:
+    num_steps = len(sweep_values)
+    swept_idx = sweep_cell - 1
+    swept_base_color = plotly_colors[swept_idx % len(plotly_colors)]
+    swept_shades = generate_shades(swept_base_color, num_steps)
+    stack_shades = generate_shades("#000000", num_steps)
+
+    for i in range(num_cells):
+        if i == swept_idx:
+            for step_i, val in enumerate(sweep_values):
+                fig.add_trace(go.Scatter(
+                    x=all_V_steps[step_i][i],
+                    y=J_common,
+                    mode="lines",
+                    name=f"Subcell {i+1} ({sweep_param}={val:.2g})",
+                    line=dict(color=swept_shades[step_i])
+                ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=all_V_steps[0][i],
+                y=J_common,
+                mode="lines",
+                name=f"Subcell {i+1}",
+                line=dict(color=plotly_colors[i % len(plotly_colors)])
+            ))
+
+    if num_cells > 1:
+        for step_i, val in enumerate(sweep_values):
+            fig.add_trace(go.Scatter(
+                x=all_V_stack_steps[step_i],
+                y=J_common,
+                mode="lines",
+                name=f"Multijunction ({sweep_param}={val:.2g})",
+                line=dict(color=stack_shades[step_i], width=2)
+            ))
+
+else:
+    for i in range(num_cells):
+        fig.add_trace(go.Scatter(
+            x=all_V_steps[0][i],
+            y=J_common,
+            mode="lines",
+            name=f"Subcell {i+1}",
+            line=dict(color=plotly_colors[i % len(plotly_colors)])
+        ))
+
+    if num_cells > 1:
+        fig.add_trace(go.Scatter(
+            x=all_V_stack_steps[0],
+            y=J_common,
+            mode="lines",
+            name="Multijunction",
+            line=dict(color="black", width=3)
+        ))
+
+# Vertikale Linie bei X=0 und horizontale Linie bei Y=0
+fig.add_vline(x=0, line_width=1, line_dash="dash", line_color="gray")
+fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="gray")
+
+# Maximalen x-Wert dynamisch aus allen Daten berechnen
+max_v = 0.0
+for V_step in all_V_steps:
+    for v_arr in V_step:
+        max_v = max(max_v, np.nanmax(v_arr))
+if num_cells > 1:
+    for v_st in all_V_stack_steps:
+        max_v = max(max_v, np.nanmax(v_st))
+
+fig.update_xaxes(range=[-0.1, max_v * 1.05])
+
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# Download Buttons (.txt)
+# -----------------------------
+st.markdown("### Download Options")
+base_filename = st.text_input("Base filename for export:", value="solar_simulation")
+
+# Results table
+txt_results = df_results.to_csv(index=False, sep='\t').encode('utf-8')
+st.download_button("Download Results Table (.txt)", data=txt_results, file_name=f"{base_filename}_Results_Table.txt", mime="text/plain")
+
+# IV Curves
+iv_dict = {}
+if sweep_enable and len(sweep_values) > 1:
+    for step_i, val in enumerate(sweep_values):
+        for i in range(num_cells):
+            iv_dict[f"V{i+1}_step{step_i+1} [V]"] = all_V_steps[step_i][i]
+            iv_dict[f"J{i+1}_step{step_i+1} [mA/cm²]"] = J_common
+        if num_cells > 1:
+            iv_dict[f"Vstack_step{step_i+1} [V]"] = all_V_stack_steps[step_i]
+            iv_dict[f"Jstack_step{step_i+1} [mA/cm²]"] = J_common
+else:
+    for i in range(num_cells):
+        iv_dict[f"V{i+1} [V]"] = all_V_steps[0][i]
+        iv_dict[f"J{i+1} [mA/cm²]"] = J_common
+    if num_cells > 1:
+        iv_dict["Vstack [V]"] = all_V_stack_steps[0]
+        iv_dict["Jstack [mA/cm²]"] = J_common
+
+df_iv = pd.DataFrame(iv_dict)
+txt_iv = df_iv.to_csv(index=False, sep='\t').encode('utf-8')
+st.download_button("Download IV Curves (.txt)", data=txt_iv, file_name=f"{base_filename}_IV_Curves.txt", mime="text/plain")
+
+# Input parameters
+input_list = []
+for i, c in enumerate(cells):
+    input_list.append({
+        "Subcell": f"{i+1}",
+        "Jph [mA/cm²]": c["Jph"],
+        "J0 [mA/cm²]": c["J0"],
+        "n": c["n"],
+        "Rs [Ω·cm²]": c["Rs"],
+        "Rsh [Ω·cm²]": c["Rsh"],
+        "T [K]": c["T"]
+    })
+df_input = pd.DataFrame(input_list)
+txt_input = df_input.to_csv(index=False, sep='\t').encode('utf-8')
+st.download_button("Download Input Parameters (.txt)", data=txt_input, file_name=f"{base_filename}_Input_Parameters.txt", mime="text/plain")
