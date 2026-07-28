@@ -319,15 +319,30 @@ def style_table(df):
 
     return styles
 
-# Mapping der Dezimalstellen für die exakte Formatierung in der UI
-rounding_dict = {
-    "Jsc [mA/cm²]": 2,
-    "Voc [V]": 3,
-    "FF [%]": 2,
-    "PCE [mW/cm²]": 2,
-    "Jmpp [mA/cm²]": 2,
-    "Vmpp [V]": 2
+# Dynamischer Name für die Sweep-Spalte
+sweep_col_name = f"SweepValue ({sweep_param_display})"
+
+# Definieren der Formatierungs-Regeln als Dictionary für Pandas Styler
+format_dict = {
+    "Jsc [mA/cm²]": "{:.2f}",
+    "Voc [V]": "{:.3f}",
+    "FF [%]": "{:.2f}",
+    "PCE [mW/cm²]": "{:.2f}",
+    "Jmpp [mA/cm²]": "{:.2f}",
+    "Vmpp [V]": "{:.2f}",
 }
+
+if sweep_enable:
+    format_dict[sweep_col_name] = "{:.3f}"
+
+# Tabelle stylen (Farben + Formatierung in einem Rutsch)
+styled_df = (
+    df_results.style
+    .apply(style_table, axis=None)
+    .format(format_dict, na_rep="")
+)
+
+st.dataframe(styled_df, use_container_width=True)
 
 df_results_display = df_results.copy()
 for col, decimals in rounding_dict.items():
