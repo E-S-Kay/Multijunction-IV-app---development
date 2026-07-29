@@ -112,7 +112,7 @@ def calculate_iv_fast(Jph_mA, J0_mA, n, Rs, Rsh, T, J_common_mA):
 @st.cache_data
 def run_simulation(cells, sweep_enable, sweep_cell, sweep_param_key, sweep_values):
     max_jph = max([c["Jph"] for c in cells])
-    J_common = np.linspace(0.0, max_jph, 800)
+    J_common = np.linspace(0.0, max_jph, 200)
 
     results = []
     all_V_steps = []
