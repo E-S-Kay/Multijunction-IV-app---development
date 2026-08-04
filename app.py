@@ -113,7 +113,6 @@ def calculate_iv_fast(Jph_mA, J0_mA, n, Rs, Rsh, T, J_common_mA):
 # -----------------------------
 @st.cache_data
 def run_simulation(cells_tuple, sweep_enable, sweep_cell, sweep_param_key, sweep_values_tuple):
-    # Convert tuples back to lists/arrays for internal usage (cache compatibility)
     cells = [dict(c) for c in cells_tuple]
     sweep_values = list(sweep_values_tuple)
     
@@ -182,11 +181,288 @@ def run_simulation(cells_tuple, sweep_enable, sweep_cell, sweep_param_key, sweep
     return df_results, all_V_steps, all_V_stack_steps, J_common
 
 # -----------------------------
-# Dynamic Color Palette & UI setup
+# Dynamic Color Palette
 # -----------------------------
 plotly_colors = ["#87CEEB", "#FF7F50", "#98FF98", "#FFDAB9", "#FFD700", "#E6E6FA"]
 
+# -----------------------------
+# Streamlit UI
+# -----------------------------
 st.set_page_config(page_title="Multijunction IV Simulator", layout="wide")
 st.title("Multijunction Solar Cell IV Simulator with Sweep")
 
-# (Keep your sidebar inputs and sweep configuration code here...)
+with st.expander("ℹ️ About & Contact", expanded=False):
+    st.markdown("""
+    **What does this simulator do?** This simulator calculates and visualizes current-voltage (IV) curves and key performance parameters ($J_{sc}$, $V_{oc}$, $FF$, $PCE$) of multijunction solar cells and their individual subcells based on the extended single-diode model.
+
+    **Key Features:**
+    * Flexible configuration for 1 to 6 subcells.
+    * Parameter sweeps for targeted analysis of individual cell parameters.
+    * Interactive plot including Maximum Power Point (MPP) calculation.
+    * Full export of simulation results and IV curve data including metadata headers.
+
+    ---
+    **Developed by:** Eike Köhnen (Helmholtz-Zentrum Berlin)  
+    **Contact (bugs, improvements, feedback):** [eike.koehnen@helmholtz-berlin.de](mailto:eike.koehnen@helmholtz-berlin.de)
+    """)
+
+num_cells = st.sidebar.selectbox("Number of subcells", [1, 2, 3, 4, 5, 6], index=1)
+
+default_jph = ["20.0", "22.0", "15.0", "12.0", "10.0", "8.0"]
+default_j0 = ["1e-18", "1e-11", "1e-14", "1e-16", "1e-18", "1e-20"]
+
+cells = []
+for i in range(num_cells):
+    color = plotly_colors[i % len(plotly_colors)]
+    
+    st.sidebar.markdown(
+        f"""
+        <div style="background-color: {color}; padding: 8px 12px; border-radius: 8px; margin-top: 15px; margin-bottom: 10px; color: #000000; font-weight: bold; font-size: 16px;">
+            Subcell {i+1}
+        </div>
+        """, 
+        unsafe_allow_html=True
+    )
+
+    jph_def = default_jph[i] if i < len(default_jph) else "10.0"
+    j0_def = default_j0[i] if i < len(default_j0) else "1e-12"
+
+    Jph = to_float(st.sidebar.text_input(f"Subcell {i+1}: Jph [mA/cm²]", jph_def, key=f"Jph{i}"))
+    J0 = to_float(st.sidebar.text_input(f"Subcell {i+1}: J0 [mA/cm²]", j0_def, key=f"J0{i}"))
+    n = to_float(st.sidebar.text_input(f"Subcell {i+1}: Ideality factor n", "1.0", key=f"n{i}"))
+    Rs = to_float(st.sidebar.text_input(f"Subcell {i+1}: Rs [Ω·cm²]", "0.2", key=f"Rs{i}"))
+    Rsh = to_float(st.sidebar.text_input(f"Subcell {i+1}: Rsh [Ω·cm²]", "1000.0", key=f"Rsh{i}"))
+    T = to_float(st.sidebar.text_input(f"Subcell {i+1}: Temperature T [K]", "298.0", key=f"T{i}"))
+    cells.append({"Jph": Jph, "J0": J0, "n": n, "Rs": Rs, "Rsh": Rsh, "T": T})
+
+# -----------------------------
+# Sweep Options
+# -----------------------------
+st.sidebar.markdown("## Parameter Sweep")
+sweep_enable = st.sidebar.checkbox("Enable Sweep", value=False)
+
+param_options = {
+    "Jph": {"label": "Jph [mA/cm²]", "key": "Jph"},
+    "J0": {"label": "J0 [mA/cm²]", "key": "J0"},
+    "n": {"label": "Ideality factor n [-]", "key": "n"},
+    "Rs": {"label": "Rs [Ω·cm²]", "key": "Rs"},
+    "Rsh": {"label": "Rsh [Ω·cm²]", "key": "Rsh"},
+    "T": {"label": "Temperature T [K]", "key": "T"}
+}
+
+if sweep_enable:
+    sweep_cell = st.sidebar.selectbox("Select Subcell to sweep", list(range(1, num_cells+1)))
+    
+    selected_param_label = st.sidebar.selectbox("Parameter to sweep", list(param_options.keys()), format_func=lambda x: param_options[x]["label"])
+    sweep_param_key = param_options[selected_param_label]["key"]
+    sweep_param_display = param_options[selected_param_label]["label"]
+    
+    sweep_min = st.sidebar.number_input("Min value", value=float(cells[sweep_cell-1][sweep_param_key]))
+    sweep_max = st.sidebar.number_input("Max value", value=float(cells[sweep_cell-1][sweep_param_key]))
+    sweep_steps = st.sidebar.number_input("Number of steps", value=5, min_value=2)
+    sweep_values = list(np.linspace(sweep_min, sweep_max, int(sweep_steps)))
+else:
+    sweep_cell = 1
+    sweep_param_key = "Jph"
+    sweep_param_display = "Jph [mA/cm²]"
+    sweep_values = [None]
+
+# -----------------------------
+# Run Simulation (Using Tuples for Caching)
+# -----------------------------
+cells_tuple = tuple(tuple(c.items()) for c in cells)
+sweep_values_tuple = tuple(sweep_values)
+
+df_results, all_V_steps, all_V_stack_steps, J_common = run_simulation(
+    cells_tuple, sweep_enable, sweep_cell, sweep_param_key, sweep_values_tuple
+)
+
+if sweep_enable and "SweepValue" in df_results.columns:
+    df_results = df_results.rename(columns={"SweepValue": f"SweepValue ({sweep_param_display})"})
+
+# -----------------------------
+# Display Table
+# -----------------------------
+st.write("### Results")
+
+def style_table(df):
+    styles = pd.DataFrame("", index=df.index, columns=df.columns)
+    
+    if sweep_enable and len(sweep_values) > 1:
+        num_steps = len(sweep_values)
+        swept_idx = sweep_cell - 1
+        swept_base_color = plotly_colors[swept_idx % len(plotly_colors)]
+        swept_shades = generate_shades(swept_base_color, num_steps)
+        stack_shades = generate_shades("#000000", num_steps)
+        rows_per_step = num_cells + (1 if num_cells > 1 else 0)
+
+        for idx, row in df.iterrows():
+            label = str(row["Label"])
+            step_i = min(idx // rows_per_step, num_steps - 1)
+            
+            for i in range(num_cells):
+                if label == f"Subcell {i+1}":
+                    if i == swept_idx:
+                        c = swept_shades[step_i]
+                    else:
+                        c = plotly_colors[i % len(plotly_colors)]
+                    styles.loc[idx, "Label"] = f"color: {c}; font-weight: bold;"
+                    break
+            
+            if label == "Multijunction":
+                c = stack_shades[step_i]
+                styles.loc[idx, "Label"] = f"color: {c}; font-weight: bold;"
+    else:
+        for idx, row in df.iterrows():
+            label = str(row["Label"])
+            for i in range(len(plotly_colors)):
+                if label == f"Subcell {i+1}":
+                    styles.loc[idx, "Label"] = f"color: {plotly_colors[i]}; font-weight: bold;"
+                    break
+            if label == "Multijunction":
+                styles.loc[idx, "Label"] = "color: #000000; font-weight: bold;"
+
+    return styles
+
+sweep_col_name = f"SweepValue ({sweep_param_display})"
+format_dict = {
+    "Jsc [mA/cm²]": "{:.2f}",
+    "Voc [V]": "{:.3f}",
+    "FF [%]": "{:.2f}",
+    "PCE [mW/cm²]": "{:.2f}",
+    "Jmpp [mA/cm²]": "{:.2f}",
+    "Vmpp [V]": "{:.3f}",
+}
+if sweep_enable:
+    format_dict[sweep_col_name] = "{:.3f}"
+
+styled_df = (
+    df_results.style
+    .apply(style_table, axis=None)
+    .format(format_dict, na_rep="")
+)
+
+st.dataframe(styled_df, use_container_width=True)
+
+# -----------------------------
+# Plot
+# -----------------------------
+fig = go.Figure()
+
+if sweep_enable and len(sweep_values) > 1:
+    num_steps = len(sweep_values)
+    swept_idx = sweep_cell - 1
+    swept_base_color = plotly_colors[swept_idx % len(plotly_colors)]
+    swept_shades = generate_shades(swept_base_color, num_steps)
+    stack_shades = generate_shades("#000000", num_steps)
+
+    for i in range(num_cells):
+        if i == swept_idx:
+            for step_i, val in enumerate(sweep_values):
+                fig.add_trace(go.Scatter(
+                    x=all_V_steps[step_i][i],
+                    y=J_common,
+                    mode="lines",
+                    name=f"Subcell {i+1} ({sweep_param_display}={val:.2g})",
+                    line=dict(color=swept_shades[step_i])
+                ))
+        else:
+            fig.add_trace(go.Scatter(
+                x=all_V_steps[0][i],
+                y=J_common,
+                mode="lines",
+                name=f"Subcell {i+1}",
+                line=dict(color=plotly_colors[i % len(plotly_colors)])
+            ))
+
+    if num_cells > 1:
+        for step_i, val in enumerate(sweep_values):
+            fig.add_trace(go.Scatter(
+                x=all_V_stack_steps[step_i],
+                y=J_common,
+                mode="lines",
+                name=f"Multijunction ({sweep_param_display}={val:.2g})",
+                line=dict(color=stack_shades[step_i], width=2)
+            ))
+
+else:
+    for i in range(num_cells):
+        fig.add_trace(go.Scatter(
+            x=all_V_steps[0][i],
+            y=J_common,
+            mode="lines",
+            name=f"Subcell {i+1}",
+            line=dict(color=plotly_colors[i % len(plotly_colors)])
+        ))
+
+    if num_cells > 1:
+        fig.add_trace(go.Scatter(
+            x=all_V_stack_steps[0],
+            y=J_common,
+            mode="lines",
+            name="Multijunction",
+            line=dict(color="black", width=3)
+        ))
+
+fig.add_vline(x=0, line_width=1, line_dash="dash", line_color="gray")
+fig.add_hline(y=0, line_width=1, line_dash="dash", line_color="gray")
+
+max_v = 0.0
+for V_step in all_V_steps:
+    for v_arr in V_step:
+        max_v = max(max_v, np.nanmax(v_arr))
+if num_cells > 1:
+    for v_st in all_V_stack_steps:
+        max_v = max(max_v, np.nanmax(v_st))
+
+fig.update_layout(
+    xaxis_title="Voltage V [V]",
+    yaxis_title="Current Density J [mA/cm²]",
+    template="plotly_white",
+    margin=dict(l=20, r=20, t=30, b=20),
+    height=500,
+)
+fig.update_xaxes(range=[-0.1, max_v * 1.05])
+
+st.plotly_chart(fig, use_container_width=True)
+
+# -----------------------------
+# Download Options
+# -----------------------------
+st.markdown("### Download Options")
+base_filename = st.text_input("Base filename for export:", value="solar_simulation")
+
+param_header = "# ==========================================\n"
+param_header += "# Simulation Input Parameters\n"
+for i, c in enumerate(cells):
+    param_header += f"# Subcell {i+1}: Jph={c['Jph']} mA/cm², J0={c['J0']} mA/cm², n={c['n']}, Rs={c['Rs']} Ω·cm², Rsh={c['Rsh']} Ω·cm², T={c['T']} K\n"
+if sweep_enable and len(sweep_values) > 1:
+    param_header += f"# Sweep Configuration: Subcell {sweep_cell}, Parameter={sweep_param_display}, Min={sweep_min}, Max={sweep_max}, Steps={int(sweep_steps)}\n"
+param_header += "# ==========================================\n\n"
+
+txt_results_content = param_header + df_results.to_csv(index=False, sep='\t')
+txt_results = txt_results_content.encode('utf-8')
+st.download_button("Download Results Table (.txt)", data=txt_results, file_name=f"{base_filename}_Results_Table.txt", mime="text/plain")
+
+iv_dict = {}
+if sweep_enable and len(sweep_values) > 1:
+    for step_i, val in enumerate(sweep_values):
+        val_str = f"{sweep_param_display}={val:.2g}"
+        for i in range(num_cells):
+            iv_dict[f"V{i+1} ({val_str}) [V]"] = all_V_steps[step_i][i]
+            iv_dict[f"J{i+1} ({val_str}) [mA/cm²]"] = J_common
+        if num_cells > 1:
+            iv_dict[f"Vmultijunction ({val_str}) [V]"] = all_V_stack_steps[step_i]
+            iv_dict[f"Jmultijunction ({val_str}) [mA/cm²]"] = J_common
+else:
+    for i in range(num_cells):
+        iv_dict[f"V{i+1} [V]"] = all_V_steps[0][i]
+        iv_dict[f"J{i+1} [mA/cm²]"] = J_common
+    if num_cells > 1:
+        iv_dict["Vmultijunction [V]"] = all_V_stack_steps[0]
+        iv_dict["Jmultijunction [mA/cm²]"] = J_common
+
+df_iv = pd.DataFrame(iv_dict)
+txt_iv_content = param_header + df_iv.to_csv(index=False, sep='\t')
+txt_iv = txt_iv_content.encode('utf-8')
+st.download_button("Download IV Curves (.txt)", data=txt_iv, file_name=f"{base_filename}_IV_Curves.txt", mime="text/plain")
